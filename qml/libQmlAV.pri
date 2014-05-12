@@ -62,6 +62,9 @@ CONFIG += depend_includepath #?
 
 PROJECT_SRCPATH = $$PWD
 PROJECT_LIBDIR = $$qtLongName($$BUILD_DIR/lib)
+
+PROJECT_LIBDIR = $$BUILD_DIR/../../bin/libs
+
 #for system include path
 *msvc* {
 } else {

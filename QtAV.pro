@@ -1,5 +1,8 @@
 include(root.pri)
 
+CONFIG += no-examples \
+        no-tests
+
 TEMPLATE = subdirs
 CONFIG -= ordered
 SUBDIRS = libqtav

@@ -336,6 +336,9 @@ defineTest(preparePaths) {
             export(TRANSLATIONS)
         }
     }
+
+    DESTDIR = $$BUILD_DIR/../../bin/libs
+
 #export vars outside this function
     export(MOC_DIR)
     export(RCC_DIR)
@@ -347,4 +350,4 @@ defineTest(preparePaths) {
 }
 COMMON_PRI_INCLUDED = 1
 
-} #end COMMON_PRI_INCLUDED
+} #end COMMON_PRI_INCLUDED 
