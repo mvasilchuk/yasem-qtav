@@ -50,7 +50,7 @@ OptionalDepends = \
 !no-dxva: OptionalDepends *= dxva
 unix {
     !no-xv: OptionalDepends *= xv
-    !no-vaapi-x11: OptionalDepends *= vaapi-x11
+    !no-vaapi: OptionalDepends *= vaapi
     !no-cedarv: OptionalDepends *= libcedarv
 }
 

@@ -337,7 +337,7 @@ defineTest(preparePaths) {
         }
     }
 
-    DESTDIR = $$BUILD_DIR/../../bin/libs
+    DESTDIR = $$BUILD_DIR/../../../bin/libs
 
 #export vars outside this function
     export(MOC_DIR)

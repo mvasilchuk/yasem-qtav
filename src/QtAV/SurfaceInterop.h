@@ -18,10 +18,39 @@
     License along with this library; if not, write to the Free Software
     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 ******************************************************************************/
-#include <libavfilter/avfilter.h>
 
-int main()
+#ifndef QTAV_SURFACEINTEROP_H
+#define QTAV_SURFACEINTEROP_H
+
+#include <QtAV/VideoFormat.h>
+
+namespace QtAV {
+
+enum SurfaceType {
+    HostMemorySurface,
+    GLTextureSurface,
+    DXTextureSurface,
+    VAAPISurface,
+    DXVASurface,
+    CUDASurface,
+    UnknownSurface
+};
+
+class Q_AV_EXPORT VideoSurfaceInterop
 {
-//	avfilter_register_all();
-	return 0;
-}
+public:
+    virtual ~VideoSurfaceInterop() {}
+    // return 0 if not supported. dxva: to host mem or gl texture
+    // handle: address of real handle. can be address of a given texture. generate a new one and return it if handle is null
+    virtual void* map(SurfaceType type, const VideoFormat& fmt, void* handle = 0, int plane = 0) {
+        Q_UNUSED(type);
+        Q_UNUSED(fmt);
+        Q_UNUSED(handle);
+        Q_UNUSED(plane);
+        return 0;
+    }
+    virtual void unmap(void* handle) {}
+};
+} //namespace QtAV
+
+#endif // QTAV_SURFACEINTEROP_H

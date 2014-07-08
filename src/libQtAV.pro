@@ -5,6 +5,7 @@ greaterThan(QT_MAJOR_VERSION, 4) {
   QT += widgets
 }
 CONFIG *= qtav-buildlib
+INCLUDEPATH += $$[QT_INSTALL_HEADERS]
 
 #var with '_' can not pass to pri?
 STATICLINK = 0
@@ -28,6 +29,20 @@ win32 {
     }
     QMAKE_EXTRA_TARGETS += rc
 }
+## copy runtime libs to qt sdk
+!ios: copy_sdk_libs = $$DESTDIR/$$qtSharedLib($$NAME)
+#plugin.depends = #makefile target
+#windows: copy /y file1+file2+... dir. need '+'
+for(f, copy_sdk_libs) {
+  #win32: copy_sdk_libs_cmd += $$quote(-\$\(COPY_FILE\) \"$$shell_path($$f)\" \"$$shell_path($$[QT_INSTALL_BINS])\")
+  #else: copy_sdk_libs_cmd += $$quote(-\$\(COPY_FILE\) \"$$shell_path($$f)\" \"$$shell_path($$[QT_INSTALL_LIBS])\")
+}
+#join values seperated by space. so quote is needed
+copy_sdk_libs_cmd = $$join(copy_sdk_libs_cmd,$$escape_expand(\\n\\t))
+#just append as a string to $$QMAKE_POST_LINK
+isEmpty(QMAKE_POST_LINK): QMAKE_POST_LINK = $$copy_sdk_libs_cmd
+else: QMAKE_POST_LINK = $${QMAKE_POST_LINK}$$escape_expand(\\n\\t)$$copy_sdk_libs_cmd
+
 OTHER_FILES += $$RC_FILE
 TRANSLATIONS = $${PROJECTROOT}/i18n/QtAV_zh_CN.ts
 
@@ -60,7 +75,8 @@ sse2|config_sse2|contains(TARGET_ARCH_SUB, sse2) {
 }
 #UINT64_C: C99 math features, need -D__STDC_CONSTANT_MACROS in CXXFLAGS
 DEFINES += __STDC_CONSTANT_MACROS
-android: LIBS += -lOpenSLES -lopenal -lavcodec-55 -lavformat-55 -lavutil-52 -lswscale-2
+android: CONFIG += config_opensl
+android: LIBS += -lavcodec-55 -lavformat-55 -lavutil-52 -lswscale-2
 else: LIBS += -lavcodec -lavformat -lavutil -lswscale
 config_avfilter {
     DEFINES += QTAV_HAVE_AVFILTER=1
@@ -110,6 +126,11 @@ config_openal {
     blackberry: LIBS += -lOpenAL
     mac: LIBS += -framework OpenAL
     mac: DEFINES += HEADER_OPENAL_PREFIX
+}
+config_opensl {
+    SOURCES += AudioOutputOpenSL.cpp
+    DEFINES *= QTAV_HAVE_OPENSL=1
+    LIBS += -lOpenSLES
 }
 config_gdiplus {
     DEFINES *= QTAV_HAVE_GDIPLUS=1
@@ -172,26 +193,19 @@ config_dxva {
 config_vaapi* {
     DEFINES *= QTAV_HAVE_VAAPI=1
     SOURCES += VideoDecoderVAAPI.cpp
-    LIBS += -lva #TODO: dynamic load using dllapi
-    config_vaapi-x11 {
-        DEFINES *= QTAV_HAVE_VAAPI_X11=1
-        LIBS += -lva-x11
-    }
-    #config_vaapi-drm {
-    #   DEFINES *= QTAV_HAVE_VAAPI_DRM=1
-    #   LIBS += -lva-drm
-    #}
-    config_vaapi-glx {
-        DEFINES *= QTAV_HAVE_VAAPI_GLX=1
-        LIBS *= -lva-glx
-    }
+    LIBS += -lva #dynamic load va-glx va-x11 using dllapi
 }
 config_libcedarv {
     DEFINES *= QTAV_HAVE_CEDARV=1
     SOURCES += VideoDecoderCedarv.cpp
     LIBS += -lvecore -lcedarv
 }
-
+macx:!ios: CONFIG += config_vda
+config_vda {
+    DEFINES *= QTAV_HAVE_VDA=1
+    SOURCES += VideoDecoderVDA.cpp
+    LIBS += -framework VideoDecodeAcceleration -framework CoreVideo
+}
 SOURCES += \
     QtAV_Compat.cpp \
     QtAV_Global.cpp \
@@ -256,6 +270,7 @@ SDK_HEADERS *= \
     QtAV/AVDecoder.h \
     QtAV/AVDemuxer.h \
     QtAV/BlockingQueue.h \
+    QtAV/CommonTypes.h \
     QtAV/Filter.h \
     QtAV/FilterContext.h \
     QtAV/Frame.h \
@@ -281,6 +296,7 @@ SDK_HEADERS *= \
     QtAV/VideoFrame.h \
     QtAV/FactoryDefine.h \
     QtAV/Statistics.h \
+    QtAV/SurfaceInterop.h \
     QtAV/version.h
 
 
@@ -292,9 +308,11 @@ HEADERS *= \
     QtAV/AVThread.h \
     QtAV/AudioThread.h \
     QtAV/VideoThread.h \
+    QtAV/ColorTransform.h \
     QtAV/VideoOutputEventFilter.h \
     QtAV/OutputSet.h \
     QtAV/QtAV_Compat.h \
+    QtAV/QAVIOContext.h \
     QtAV/singleton.h \
     QtAV/factory.h \
     QtAV/FilterManager.h \
@@ -312,10 +330,7 @@ HEADERS *= \
     QtAV/VideoDecoderFFmpegHW.h \
     QtAV/private/VideoRenderer_p.h \
     QtAV/private/QPainterRenderer_p.h \
-    QtAV/private/WidgetRenderer_p.h \
-    QtAV/QAVIOContext.h \
-    QtAV/ColorTransform.h \
-    QtAV/CommonTypes.h
+    QtAV/private/WidgetRenderer_p.h
 
 SDK_INCLUDE_FOLDER = QtAV
 include($$PROJECTROOT/deploy.pri)

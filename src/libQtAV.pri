@@ -49,6 +49,7 @@ NAME = QtAV
 eval(LIB$$upper($$NAME)_PRI_INCLUDED = 1)
 
 LIB_VERSION = 1.3.4 #0.x.y may be wrong for dll
+ios: STATICLINK=1
 isEmpty(STATICLINK): STATICLINK = 0  #1 or 0. use static lib or not
 
 TEMPLATE += fakelib
@@ -63,7 +64,7 @@ CONFIG += depend_includepath #?
 PROJECT_SRCPATH = $$PWD
 PROJECT_LIBDIR = $$qtLongName($$BUILD_DIR/lib)
 
-PROJECT_LIBDIR = $$BUILD_DIR/../../bin/libs
+PROJECT_LIBDIR = $$BUILD_DIR/../../../bin/libs
 
 #for system include path
 *msvc* {
@@ -142,9 +143,9 @@ unix {
 # Executable dir search: ld -z origin, g++ -Wl,-R,'$ORIGIN', in makefile -Wl,-R,'$$ORIGIN'
 # Working dir search: "."
 # TODO: for macx. see qtcreator/src/rpath.pri. (-rpath define rpath, @rpath exapand to that path?)
-    macx {
-        QMAKE_LFLAGS_SONAME = -Wl,-install_name,@rpath/Frameworks/
-        QMAKE_LFLAGS += -Wl,-rpath,@loader_path/../,-rpath,@executable_path/../
+    macx|ios {
+        QMAKE_LFLAGS_SONAME = -Wl,-install_name,$$PROJECT_LIBDIR/
+        #QMAKE_LFLAGS += -Wl,-rpath,@loader_path/../,-rpath,@executable_path/../
     } else {
         RPATHDIR = \$\$ORIGIN \$\$ORIGIN/lib . /usr/local/lib
 # $$PROJECT_LIBDIR only for host == target. But QMAKE_TARGET.arch is only available on windows. QT_ARCH is bad, e.g. QT_ARCH=i386 while QMAKE_HOST.arch=i686

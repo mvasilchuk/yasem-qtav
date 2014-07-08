@@ -47,7 +47,7 @@ public:
         // subclass setup va_pixfmt here
     }
 
-    virtual ~VideoDecoderFFmpegHWPrivate() {}
+    virtual ~VideoDecoderFFmpegHWPrivate() {} //ctx is 0 now
     void restore() {
         codec_ctx->pix_fmt = pixfmt;
         codec_ctx->opaque = 0;
@@ -61,7 +61,7 @@ public:
 #endif //QTAV_VA_REF
     }
 
-    virtual bool setup(void **hwctx, AVPixelFormat *chroma, int w, int h) = 0;
+    virtual bool setup(void **hwctx, int w, int h) = 0;
 
     AVPixelFormat getFormat(struct AVCodecContext *p_context, const AVPixelFormat *pi_fmt);
     virtual bool getBuffer(void **opaque, uint8_t **data) = 0;

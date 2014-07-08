@@ -26,6 +26,8 @@
 #include <QtAV/private/AVOutput_p.h>
 #include <QtAV/AudioFrame.h>
 #include <QtCore/QQueue>
+#include <QtCore/QVector>
+#include <limits>
 
 namespace QtAV {
 
@@ -37,9 +39,63 @@ public:
       , vol(1)
       , speed(1.0)
       , max_channels(1)
+      , nb_buffers(8)
+      , buffers_reseted(true)
+      , index_enqueue(-1)
+      , index_deuqueue(-1)
     {
+        frame_infos.resize(nb_buffers);
     }
     virtual ~AudioOutputPrivate(){}
+
+    typedef struct {
+        qreal timestamp;
+        int data_size;
+    } FrameInfo;
+
+    FrameInfo& currentEnqueueInfo() {
+        Q_ASSERT(index_enqueue >= 0);
+        return frame_infos[index_enqueue%frame_infos.size()];
+    }
+    FrameInfo& nextEnqueueInfo() { return frame_infos[(index_enqueue + 1)%frame_infos.size()]; }
+    const FrameInfo& nextEnqueueInfo() const { return frame_infos[(index_enqueue + 1)%frame_infos.size()]; }
+    FrameInfo& currentDequeueInfo() {
+        Q_ASSERT(index_deuqueue >= 0);
+        return frame_infos[index_deuqueue%frame_infos.size()];
+    }
+    FrameInfo& nextDequeueInfo() { return frame_infos[(index_deuqueue+1)%frame_infos.size()]; }
+    const FrameInfo& nextDequeueInfo() const { return frame_infos[(index_deuqueue+1)%frame_infos.size()]; }
+    void resetBuffers() {
+        index_enqueue = -1;
+        index_deuqueue = -1;
+    }
+    bool isBufferReseted() const { return index_enqueue == -1 && index_deuqueue == -1; }
+    bool canAddBuffer() {
+        return isBufferReseted() || (index_enqueue - index_deuqueue  < frame_infos.size()&& index_deuqueue >= 0);
+        return isBufferReseted() || (!!((index_enqueue - index_deuqueue + 1) % frame_infos.size()) && index_deuqueue >= 0);
+    }
+    void bufferAdded() {
+        if (index_enqueue < 0 || index_enqueue == std::numeric_limits<int>::max())
+            index_enqueue = 0;
+        else
+            ++index_enqueue;
+        return;
+        index_enqueue = (index_enqueue + 1) % frame_infos.size();
+    }
+    bool canRemoveBuffer() {
+        return index_enqueue > index_deuqueue;
+    }
+    void bufferRemoved() {
+        if (index_deuqueue == index_enqueue)
+            return;
+        if (index_deuqueue < 0 || index_deuqueue == std::numeric_limits<int>::max())
+            index_deuqueue = 0;
+        else
+            ++index_deuqueue;
+        return;
+        index_deuqueue = (index_deuqueue + 1) % frame_infos.size();
+    }
+
     bool mute;
     qreal vol;
     qreal speed;
@@ -47,12 +103,13 @@ public:
     AudioFormat format;
     QByteArray data;
     AudioFrame audio_frame;
+    quint32 nb_buffers;
 
-    typedef struct {
-        qreal timestamp;
-        int data_size;
-    } FrameInfo;
-    QQueue<FrameInfo> queued_frame_info;
+private:
+    bool buffers_reseted;
+    // the index of current enqueue/dequeue
+    int index_enqueue, index_deuqueue;
+    QVector<FrameInfo> frame_infos;
 };
 
 } //namespace QtAV
