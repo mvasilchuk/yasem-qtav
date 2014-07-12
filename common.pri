@@ -337,7 +337,13 @@ defineTest(preparePaths) {
         }
     }
 
-    DESTDIR = $$BUILD_DIR/../../../bin/libs
+    unix:!mac {
+        DESTDIR = $$BUILD_DIR/../../../bin/libs
+    }
+
+    win32: {
+        DESTDIR = $$BUILD_DIR/../../../bin
+    }
 
 #export vars outside this function
     export(MOC_DIR)

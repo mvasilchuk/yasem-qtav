@@ -4,7 +4,7 @@ CONFIG += no-examples \
         no-tests
 
 TEMPLATE = subdirs
-CONFIG -= ordered
+CONFIG -= ordered debug_and_release
 SUBDIRS = libqtav tools
 libqtav.file = src/libQtAV.pro
 greaterThan(QT_MAJOR_VERSION, 4) {
