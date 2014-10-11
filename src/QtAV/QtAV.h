@@ -31,7 +31,6 @@
 #include <QtAV/AVDemuxer.h>
 #include <QtAV/AVOutput.h>
 #include <QtAV/AVPlayer.h>
-#include <QtAV/OutputSet.h>
 #include <QtAV/Packet.h>
 #include <QtAV/Statistics.h>
 
@@ -44,11 +43,12 @@
 
 #include <QtAV/Filter.h>
 #include <QtAV/FilterContext.h>
-#include <QtAV/OSD.h>
-#include <QtAV/OSDFilter.h>
 
 #include <QtAV/ImageConverter.h>
 #include <QtAV/ImageConverterTypes.h>
+
+#include <QtAV/VideoShader.h>
+#include <QtAV/OpenGLVideo.h>
 
 #include <QtAV/VideoCapture.h>
 #include <QtAV/VideoDecoder.h>
@@ -59,12 +59,13 @@
 #include <QtAV/VideoRendererTypes.h>
 #include <QtAV/VideoOutput.h>
 //The following renderer headers can be removed
-#include <QtAV/Direct2DRenderer.h>
-#include <QtAV/GDIRenderer.h>
-#include <QtAV/GLWidgetRenderer.h>
 #include <QtAV/QPainterRenderer.h>
 #include <QtAV/GraphicsItemRenderer.h>
 #include <QtAV/WidgetRenderer.h>
-#include <QtAV/XVRenderer.h>
+#include <QtAV/GLWidgetRenderer.h>
+#include <QtAV/GLWidgetRenderer2.h>
+
+#include <QtAV/Subtitle.h>
+#include <QtAV/SubtitleFilter.h>
 
 #endif // QTAV_H

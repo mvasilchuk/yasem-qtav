@@ -19,44 +19,41 @@
     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 ******************************************************************************/
 
-#include <QtAV/AVPlayer.h>
+#include "QtAV/AVPlayer.h"
 
 #include <limits>
 
-#include <qevent.h>
-#include <qpainter.h>
-#include <QApplication>
-#include <QEvent>
+#include <QCoreApplication>
+#include <QtCore/QEvent>
 #include <QtCore/QDir>
-//#include <QtCore/QMetaObject>
-
-#include <QtAV/AVDemuxer.h>
-#include <QtAV/AudioFormat.h>
-#include <QtAV/AudioResampler.h>
-#include <QtAV/AudioThread.h>
-#include <QtAV/Packet.h>
-#include <QtAV/AudioDecoder.h>
-#include <QtAV/VideoRenderer.h>
-#include <QtAV/OutputSet.h>
-#include <QtAV/AVClock.h>
-#include <QtAV/VideoCapture.h>
-#include <QtAV/VideoDecoderTypes.h>
-#include <QtAV/WidgetRenderer.h>
-#include <QtAV/VideoThread.h>
-#include <QtAV/AVDemuxThread.h>
-#include <QtAV/VideoOutputEventFilter.h>
-#include <QtAV/VideoCapture.h>
-#include <QtAV/AudioOutputTypes.h>
-#include <QtAV/FilterManager.h>
-
-#include <QIODevice>
-
-#include <QtAV/QtAV_Compat.h>
+#include <QtCore/QIODevice>
+#if QTAV_HAVE(WIDGETS)
+#include <QWidget>
+#endif //QTAV_HAVE(WIDGETS)
+#include "QtAV/AVDemuxer.h"
+#include "QtAV/AudioFormat.h"
+#include "QtAV/AudioResampler.h"
+#include "QtAV/AudioThread.h"
+#include "QtAV/Packet.h"
+#include "QtAV/AudioDecoder.h"
+#include "QtAV/VideoRenderer.h"
+#include "QtAV/AVClock.h"
+#include "QtAV/VideoCapture.h"
+#include "QtAV/VideoDecoderTypes.h"
+#include "QtAV/VideoThread.h"
+#include "QtAV/AVDemuxThread.h"
+#include "QtAV/VideoCapture.h"
+#include "QtAV/AudioOutputTypes.h"
+#include "filter/FilterManager.h"
+#include "output/OutputSet.h"
+#include "output/video/VideoOutputEventFilter.h"
+#include "QtAV/private/AVCompat.h"
 
 namespace QtAV {
 
 static const int kPosistionCheckMS = 500;
 static const qint64 kSeekMS = 10000;
+static const qint64 kInvalidPosition = std::numeric_limits<qint64>::max();
 
 static bool correct_audio_channels(AVCodecContext *ctx) {
     if (ctx->channels <= 0) {
@@ -98,7 +95,7 @@ AVPlayer::AVPlayer(QObject *parent) :
      * stopFromDemuxerThread()(which is false), so the initial value must be true
      */
     reset_state = true;
-    media_end_pos = std::numeric_limits<qint64>::max();
+    media_end_pos = kInvalidPosition;
     start_position = 0;
     stop_position = mediaStopPosition();
     repeat_current = repeat_max = 0;
@@ -119,8 +116,8 @@ AVPlayer::AVPlayer(QObject *parent) :
     connect(&demuxer, SIGNAL(mediaStatusChanged(QtAV::MediaStatus)), this, SIGNAL(mediaStatusChanged(QtAV::MediaStatus)));
     demuxer_thread = new AVDemuxThread(this);
     demuxer_thread->setDemuxer(&demuxer);
-    //use direct connection otherwise replay may stop immediatly because slot stop() is called after play()
-    connect(demuxer_thread, SIGNAL(finished()), this, SLOT(stopFromDemuxerThread()), Qt::DirectConnection);
+    //direct connection can not sure slot order?
+    connect(demuxer_thread, SIGNAL(finished()), this, SLOT(stopFromDemuxerThread()));
 
     video_capture = new VideoCapture(this);
 
@@ -135,6 +132,20 @@ AVPlayer::AVPlayer(QObject *parent) :
             << VideoDecoderId_Cedarv
 #endif //QTAV_HAVE(CEDARV)
             << VideoDecoderId_FFmpeg;
+    audioout_ids
+#if QTAV_HAVE(OPENAL)
+            << AudioOutputId_OpenAL
+#endif
+#if QTAV_HAVE(PORTAUDIO)
+            << AudioOutputId_PortAudio
+#endif
+#if QTAV_HAVE(OPENSL)
+            << AudioOutputId_OpenSL
+#endif
+#if QTAV_HAVE(DSound)
+            << AudioOutputId_DSound
+#endif
+              ;
 }
 
 AVPlayer::~AVPlayer()
@@ -188,6 +199,7 @@ void AVPlayer::addVideoRenderer(VideoRenderer *renderer)
         return;
     }
     renderer->setStatistics(&mStatistics);
+#if QTAV_HAVE(WIDGETS)
     QObject *voo = renderer->widget();
     if (voo) {
         //TODO: how to delete filter if no parent?
@@ -195,6 +207,7 @@ void AVPlayer::addVideoRenderer(VideoRenderer *renderer)
         if (renderer->widget())
             voo->installEventFilter(new VideoOutputEventFilter(renderer));
     }
+#endif //QTAV_HAVE(WIDGETS)
     mpVOSet->addOutput(renderer);
 }
 
@@ -220,11 +233,11 @@ void AVPlayer::setRenderer(VideoRenderer *r)
             r->setOutAspectRatio(vo->outAspectRatio());
         }
     }
-    if (r) {
-        r->resizeRenderer(r->rendererSize()); //IMPORTANT: the swscaler will resize
-    }
-    r->setStatistics(&mStatistics);
     clearVideoRenderers();
+    if (!r)
+        return;
+    r->resizeRenderer(r->rendererSize()); //IMPORTANT: the swscaler will resize
+    r->setStatistics(&mStatistics);
     addVideoRenderer(r);
 }
 
@@ -376,8 +389,17 @@ bool AVPlayer::uninstallFilter(Filter *filter)
 {
     if (!FilterManager::instance().unregisterFilter(filter)) {
         qWarning("unregister filter %p failed", filter);
+        //return false;
+    }
+    AVThread *avthread = video_thread;
+    if (!avthread || !avthread->filters().contains(filter)) {
+        avthread = audio_thread;
+    }
+    if (!avthread || !avthread->filters().contains(filter)) {
         return false;
     }
+    avthread->uninstallFilter(filter, true);
+    return true;
     /*
      * TODO: send FilterUninstallTask(this, filter){this.mFilters.remove} to
      * active player's AVThread
@@ -402,13 +424,6 @@ bool AVPlayer::uninstallFilter(Filter *filter)
         AVThread *mpThread;
         Filter *mpFilter;
     };
-    AVThread *avthread = video_thread;
-    if (!avthread || !avthread->filters().contains(filter)) {
-        avthread = audio_thread;
-    }
-    if (!avthread || !avthread->filters().contains(filter)) {
-        return false;
-    }
     avthread->scheduleTask(new UninstallFilterTask(avthread, filter));
     return true;
 }
@@ -455,9 +470,13 @@ QVariantHash AVPlayer::optionsForVideoCodec() const
  */
 void AVPlayer::setFile(const QString &path)
 {
-    reset_state = !this->path.isEmpty() && this->path != path;
-    demuxer.setAutoResetStream(reset_state);
+    reset_state = this->path != path;
     this->path = path;
+    if (reset_state)
+        emit sourceChanged();
+    reset_state = !this->path.isEmpty() && reset_state;
+    demuxer.setAutoResetStream(reset_state);
+    // TODO: use absoluteFilePath?
     m_pIODevice = 0;
     loaded = false; //
     //qApp->activeWindow()->setWindowTitle(path); //crash on linux
@@ -477,12 +496,13 @@ void AVPlayer::setIODevice(QIODevice* device)
         qDebug("No support for sequential devices.");
         return;
     }
-
     demuxer.setAutoResetStream(reset_state);
     reset_state = m_pIODevice != device;
     m_pIODevice = device;
-    path = QString();
     loaded = false;
+    if (!path.isEmpty())
+        emit sourceChanged();
+    path = QString();
 }
 
 VideoCapture* AVPlayer::videoCapture()
@@ -603,6 +623,7 @@ bool AVPlayer::load(bool reload)
         if (!demuxer.audioCodecContext()) {
             qWarning("No audio found or audio not supported. Using ExternalClock");
             masterClock()->setClockType(AVClock::ExternalClock);
+            masterClock()->setInitialValue(mediaStartPositionF());
         } else {
             qDebug("Using AudioClock");
             masterClock()->setClockType(AVClock::AudioClock);
@@ -613,7 +634,7 @@ bool AVPlayer::load(bool reload)
     if ((path.startsWith("file:") || QFile(path).exists()) && duration() > 0) {
         media_end_pos = mediaStartPosition() + duration();
     } else {
-        media_end_pos = std::numeric_limits<qint64>::max();
+        media_end_pos = kInvalidPosition;
     }
     // if file changed or stop() called by user, stop_position changes.
     if (stopPosition() > mediaStopPosition() || stopPosition() == 0) {
@@ -637,6 +658,7 @@ bool AVPlayer::load(bool reload)
         }
     }
     if (!audio_thread && !video_thread) {
+        loaded = false;
         qWarning("load failed");
         return false;
     }
@@ -678,7 +700,7 @@ qint64 AVPlayer::startPosition() const
 
 void AVPlayer::setStartPosition(qint64 pos)
 {
-    if (pos > stopPosition()) {
+    if (pos > stopPosition() && stopPosition() > 0) {
         qWarning("start position too large (%lld > %lld). ignore", pos, stopPosition());
         return;
     }
@@ -849,7 +871,7 @@ void AVPlayer::play()
     if (isPlaying()) {
         if (start_last) {
             clock->pause(true); //external clock
-            last_position = mediaStopPosition() != std::numeric_limits<qint64>::max() ? -position() : 0;
+            last_position = mediaStopPosition() != kInvalidPosition ? -position() : 0;
             reset_state = false; //set a new stream number should not reset other states
             qDebug("start pos is current position: %lld", last_position);
         } else {
@@ -860,9 +882,7 @@ void AVPlayer::play()
         stop();
         // wait here to ensure stopped() and startted() is in correct order
         if (demuxer_thread->isRunning()) {
-            QEventLoop loop;
-            connect(demuxer_thread, SIGNAL(finished()), &loop, SLOT(quit())); //queued connection. so later than stopped() emitted
-            loop.exec();
+            demuxer_thread->wait(500);
         }
         if (last_pos < 0)
             last_position = -last_pos;
@@ -906,6 +926,9 @@ void AVPlayer::play()
         video_thread->start();
         video_thread->waitForReady();
     }
+    if (startPosition() > 0 && startPosition() < mediaStopPosition() && last_position <= 0) {
+        demuxer.seek((qint64)startPosition());
+    }
     demuxer_thread->start();
     if (start_last) {
         clock->pause(false); //external clock
@@ -929,6 +952,10 @@ void AVPlayer::stopFromDemuxerThread()
 {
     reset_state = false;
     qDebug("demuxer thread emit finished. avplayer emit stopped()");
+    if (demuxer_thread->isRunning()) {
+        qWarning("XXXXXXXXX demuxer thread is running........");
+        return;
+    }
     emit stopped();
 }
 
@@ -952,8 +979,10 @@ void AVPlayer::startNotifyTimer()
 void AVPlayer::stopNotifyTimer()
 {
     killTimer(timer_id);
+    timer_id = -1;
 }
 
+// TODO: doc about when the state will be reset
 void AVPlayer::stop()
 {
     // check timer_id, <0 return?
@@ -977,7 +1006,7 @@ void AVPlayer::stop()
         }
         start_position = 0;
         stop_position = 0; // 0 can stop play in timerEvent
-        media_end_pos = std::numeric_limits<qint64>::max();
+        media_end_pos = kInvalidPosition;
         repeat_current = repeat_max = 0;
     } else { //called by player
         if (timer_id >= 0) {
@@ -987,49 +1016,34 @@ void AVPlayer::stop()
     }
     reset_state = true;
 
-    last_position = mediaStopPosition() != std::numeric_limits<qint64>::max() ? startPosition() : 0;
+    last_position = mediaStopPosition() != kInvalidPosition ? startPosition() : 0;
     if (!isPlaying()) {
         qDebug("Not playing~");
         return;
     }
 
-    struct avthreads_t {
-        AVThread *thread;
-        const char *name;
-    } threads[] = {
-        { audio_thread, "audio thread" },
-        { video_thread, "video thread" },
-        { 0, 0 }
-    };
-    for (int i = 0; threads[i].name; ++i) {
-        AVThread *thread = threads[i].thread;
-        if (!thread)
-            continue;
-        qDebug("stopping %s...", threads[i].name);
-        thread->stop();
-        // use if instead of while? eventloop in play()
-        while (thread->isRunning()) {
-            thread->wait(500);
-            qDebug("stopping %s...", threads[i].name);
-        }
+    while (demuxer_thread->isRunning()) {
+        qDebug("stopping demuxer thread...");
+        demuxer_thread->stop();
+        demuxer_thread->wait(500);
     }
-    // can not close decoders here since close and open may be in different threads
     qDebug("all audio/video threads  stopped...");
 }
 
 void AVPlayer::timerEvent(QTimerEvent *te)
 {
     if (te->timerId() == timer_id) {
-        if (stopPosition() == std::numeric_limits<qint64>::max()) {
-            // not seekable. network stream
-            return;
-        }
         // killTimer() should be in the same thread as object. kill here?
         if (isPaused()) {
             return;
         }
         // active only when playing
-        qint64 t = clock->value()*1000.0;
+        const qint64 t = clock->value()*1000.0;
+        if (stopPosition() == kInvalidPosition) {
+            // not seekable. network stream
+            emit positionChanged(t);
+            return;
+        }
         if (mSeeking && t >= mSeekTarget + 1000) {
             mSeeking = false;
             mSeekTarget = 0;
@@ -1272,19 +1286,21 @@ bool AVPlayer::setupAudioThread()
     }
     //TODO: setAudioOutput() like vo
     if (!_audio && ao_enable) {
-        qDebug("new audio output");
-        //TODO: use priority?
-#if QTAV_HAVE(PORTAUDIO)
-        _audio = AudioOutputFactory::create(AudioOutputId_PortAudio);
-#elif QTAV_HAVE(OPENAL)
-        _audio = AudioOutputFactory::create(AudioOutputId_OpenAL);
-#endif
+        foreach (AudioOutputId aoid, audioout_ids) {
+            qDebug("trying audio output '%s'", AudioOutputFactory::name(aoid).c_str());
+            _audio = AudioOutputFactory::create(aoid);
+            if (_audio) {
+                qDebug("audio output found.");
+                break;
+            }
+        }
     }
     if (!_audio) {
         // TODO: only when no audio stream or user disable audio stream. running an audio thread without sound is waste resource?
         //masterClock()->setClockType(AVClock::ExternalClock);
         //return;
     } else {
+        _audio->close();
         correct_audio_channels(aCodecCtx);
         AudioFormat af;
         af.setSampleRate(aCodecCtx->sample_rate);

@@ -34,6 +34,7 @@
 #  undef Q_AV_EXPORT
 #  define Q_AV_EXPORT Q_DECL_IMPORT //only for vc?
 #endif
+#define Q_AV_PRIVATE_EXPORT Q_AV_EXPORT
 
 /* runtime version. used to compare with compile time version */
 Q_AV_EXPORT unsigned QtAV_Version();
@@ -51,12 +52,13 @@ Q_AV_EXPORT QString aboutQtAV_HTML();
 Q_AV_EXPORT void setFFmpegLogHandler(void(*)(void *, int, const char *, va_list));
 }
 
+#if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
+#define QStringLiteral(X) QString::fromUtf8(X)
+#endif //QT_VERSION
 /*
  * msvc sucks! can not deal with (defined QTAV_HAVE_##FEATURE && QTAV_HAVE_##FEATURE)
  */
 #define QTAV_HAVE(FEATURE) (defined QTAV_HAVE_##FEATURE && QTAV_HAVE_##FEATURE)
-
-#define QTAV_HAVE_QGLFUNCTIONS QT_VERSION >= QT_VERSION_CHECK(4, 8, 0)
 
 //TODO: always inline
 /* --gnu option of the RVCT compiler also defines __GNUC__ */
@@ -67,6 +69,12 @@ Q_AV_EXPORT void setFFmpegLogHandler(void(*)(void *, int, const char *, va_list)
 #else
 /* Define this for !GCC compilers, just so we can write things like GCC_VERSION_AT_LEAST(4, 1, 0). */
 #define GCC_VERSION_AT_LEAST(major, minor, patch) 0
+#endif
+
+#if QT_VERSION < QT_VERSION_CHECK(5, 0, 0) || defined(QT_WIDGETS_LIB)
+#ifndef QTAV_HAVE_WIDGETS
+#define QTAV_HAVE_WIDGETS 1
+#endif //QTAV_HAVE_WIDGETS
 #endif
 
 #endif // QTAV_GLOBAL_H

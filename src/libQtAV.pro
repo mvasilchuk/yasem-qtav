@@ -1,8 +1,18 @@
 TEMPLATE = lib
+MODULE_INCNAME = QtAV # for mac framework. also used in install_sdk.pro
 TARGET = QtAV
 QT += core gui
 greaterThan(QT_MAJOR_VERSION, 4) {
-  QT += widgets
+  qtHaveModule(widgets):!no_widgets {
+    QT += widgets
+    DEFINES *= QTAV_HAVE_WIDGETS=1
+  } else {
+    CONFIG *= gui_only
+  }
+  CONFIG *= config_opengl
+  greaterThan(QT_MINOR_VERSION, 3) {
+    CONFIG *= config_openglwindow
+  }
 }
 CONFIG *= qtav-buildlib
 INCLUDEPATH += $$[QT_INSTALL_HEADERS]
@@ -13,11 +23,17 @@ PROJECTROOT = $$PWD/..
 !include(libQtAV.pri): error("could not find libQtAV.pri")
 preparePaths($$OUT_PWD/../out)
 
-RESOURCES += ../i18n/QtAV.qrc \
+RESOURCES += QtAV.qrc \
     shaders/shaders.qrc
 
-win32 {
-    RC_FILE = $${PROJECTROOT}/res/QtAV.rc
+!rc_file {
+    RC_ICONS = QtAV.ico
+    QMAKE_TARGET_COMPANY = "Shanghai University->S3 Graphics | wbsecg1@gmail.com"
+    QMAKE_TARGET_DESCRIPTION = "Multimedia playback framework based on Qt & FFmpeg. https://github.com/wang-bin/QtAV"
+    QMAKE_TARGET_COPYRIGHT = "Copyright (C) 2012-2014 WangBin, wbsecg1@gmail.com"
+    QMAKE_TARGET_PRODUCT = "QtAV"
+} else:win32 {
+    RC_FILE = QtAV.rc
 #no depends for rc file by default, even if rc includes a header. Makefile target use '/' as default, so not works iwth win cmd
     rc.target = $$clean_path($$RC_FILE) #rc obj depends on clean path target
     rc.depends = $$PWD/QtAV/version.h
@@ -29,29 +45,16 @@ win32 {
     }
     QMAKE_EXTRA_TARGETS += rc
 }
-## copy runtime libs to qt sdk
-!ios: copy_sdk_libs = $$DESTDIR/$$qtSharedLib($$NAME)
-#plugin.depends = #makefile target
-#windows: copy /y file1+file2+... dir. need '+'
-for(f, copy_sdk_libs) {
-  #win32: copy_sdk_libs_cmd += $$quote(-\$\(COPY_FILE\) \"$$shell_path($$f)\" \"$$shell_path($$[QT_INSTALL_BINS])\")
-  #else: copy_sdk_libs_cmd += $$quote(-\$\(COPY_FILE\) \"$$shell_path($$f)\" \"$$shell_path($$[QT_INSTALL_LIBS])\")
-}
-#join values seperated by space. so quote is needed
-copy_sdk_libs_cmd = $$join(copy_sdk_libs_cmd,$$escape_expand(\\n\\t))
-#just append as a string to $$QMAKE_POST_LINK
-isEmpty(QMAKE_POST_LINK): QMAKE_POST_LINK = $$copy_sdk_libs_cmd
-else: QMAKE_POST_LINK = $${QMAKE_POST_LINK}$$escape_expand(\\n\\t)$$copy_sdk_libs_cmd
 
-OTHER_FILES += $$RC_FILE
-TRANSLATIONS = $${PROJECTROOT}/i18n/QtAV_zh_CN.ts
+OTHER_FILES += $$RC_FILE QtAV.svg
+TRANSLATIONS = i18n/QtAV_zh_CN.ts
 
 ## sse2 sse4_1 may be defined in Qt5 qmodule.pri but is not included. Qt4 defines sse and sse2
 sse4_1|config_sse4_1|contains(TARGET_ARCH_SUB, sse4.1) {
   CONFIG += sse2 #only sse4.1 is checked. sse2 now can be disabled if sse4.1 is disabled
   DEFINES += QTAV_HAVE_SSE4_1=1
 ## TODO: use SSE4_1_SOURCES
-# all x64 processers supports sse2. unknown option for vc
+# all x64 processors supports sse2. unknown option for vc
   *msvc* {
     !isEqual(QT_ARCH, x86_64)|!x86_64: QMAKE_CXXFLAGS += $$QMAKE_CFLAGS_SSE4_1
   } else {
@@ -60,7 +63,7 @@ sse4_1|config_sse4_1|contains(TARGET_ARCH_SUB, sse4.1) {
 }
 sse2|config_sse2|contains(TARGET_ARCH_SUB, sse2) {
   DEFINES += QTAV_HAVE_SSE2=1
-# all x64 processers supports sse2. unknown option for vc
+# all x64 processors supports sse2. unknown option for vc
   *msvc* {
     !isEqual(QT_ARCH, x86_64)|!x86_64: QMAKE_CXXFLAGS += $$QMAKE_CFLAGS_SSE2
   } else {
@@ -68,34 +71,39 @@ sse2|config_sse2|contains(TARGET_ARCH_SUB, sse2) {
   }
 }
 
+win32 {
+    CONFIG += config_dsound
+#dynamicgl: __impl__GetDC __impl_ReleaseDC __impl_GetDesktopWindow
+    LIBS += -luser32 -lgdi32
+}
+
 *msvc* {
 #link FFmpeg and portaudio which are built by gcc need /SAFESEH:NO
-    QMAKE_LFLAGS += /SAFESEH:NO
+    #QMAKE_LFLAGS += /SAFESEH:NO
     INCLUDEPATH += compat/msvc
 }
 #UINT64_C: C99 math features, need -D__STDC_CONSTANT_MACROS in CXXFLAGS
 DEFINES += __STDC_CONSTANT_MACROS
 android: CONFIG += config_opensl
-android: LIBS += -lavcodec-55 -lavformat-55 -lavutil-52 -lswscale-2
-else: LIBS += -lavcodec -lavformat -lavutil -lswscale
+LIBS += -lavcodec -lavformat -lavutil -lswscale
+
+exists($$PROJECTROOT/contrib/libchardet/libchardet.pri) {
+  include($$PROJECTROOT/contrib/libchardet/libchardet.pri)
+  DEFINES += QTAV_HAVE_CHARDET=1 BUILD_CHARDET_STATIC
+}
 config_avfilter {
     DEFINES += QTAV_HAVE_AVFILTER=1
-    SOURCES += LibAVFilter.cpp
-    HEADERS += QtAV/LibAVFilter.h
-    android: LIBS += -lavfilter-4
-    else: LIBS += -lavfilter
+    LIBS += -lavfilter
 }
 config_swresample {
     DEFINES += QTAV_HAVE_SWRESAMPLE=1
     SOURCES += AudioResamplerFF.cpp
-    android: LIBS += -lswresample-0
-    else: LIBS += -lswresample
+    LIBS += -lswresample
 }
 config_avresample {
     DEFINES += QTAV_HAVE_AVRESAMPLE=1
     SOURCES += AudioResamplerLibav.cpp
-    android: LIBS += -lavresample-1
-    else: LIBS += -lavresample
+    LIBS += -lavresample
 }
 config_ipp {
     DEFINES += QTAV_HAVE_IPP=1
@@ -112,14 +120,18 @@ config_ipp {
             -L$$(IPPROOT)/../compiler/lib/$$IPPARCH -lsvml -limf
     #omp for static link. _t is multi-thread static link
 }
+config_dsound {
+    SOURCES += output/audio/AudioOutputDSound.cpp
+    DEFINES *= QTAV_HAVE_DSOUND=1
+}
 config_portaudio {
-    SOURCES += AudioOutputPortAudio.cpp
+    SOURCES += output/audio/AudioOutputPortAudio.cpp
     DEFINES *= QTAV_HAVE_PORTAUDIO=1
     LIBS *= -lportaudio
     #win32: LIBS *= -lwinmm #-lksguid #-luuid
 }
 config_openal {
-    SOURCES += AudioOutputOpenAL.cpp
+    SOURCES += output/audio/AudioOutputOpenAL.cpp
     DEFINES *= QTAV_HAVE_OPENAL=1
     win32: LIBS += -lOpenAL32
     unix:!mac:!blackberry: LIBS += -lopenal
@@ -128,46 +140,43 @@ config_openal {
     mac: DEFINES += HEADER_OPENAL_PREFIX
 }
 config_opensl {
-    SOURCES += AudioOutputOpenSL.cpp
+    SOURCES += output/audio/AudioOutputOpenSL.cpp
     DEFINES *= QTAV_HAVE_OPENSL=1
     LIBS += -lOpenSLES
 }
-config_gdiplus {
+!gui_only: {
+  SDK_HEADERS *= \
+    QtAV/GraphicsItemRenderer.h \
+    QtAV/WidgetRenderer.h
+  HEADERS *= output/video/VideoOutputEventFilter.h
+  SOURCES *= \
+    output/video/VideoOutputEventFilter.cpp \
+    output/video/GraphicsItemRenderer.cpp \
+    output/video/WidgetRenderer.cpp
+  config_gdiplus {
     DEFINES *= QTAV_HAVE_GDIPLUS=1
-    SOURCES += GDIRenderer.cpp
-    HEADERS += QtAV/private/GDIRenderer_p.h
-    SDK_HEADERS += QtAV/GDIRenderer.h
-    LIBS += -lgdiplus -lGdi32
-}
-config_direct2d {
+    SOURCES += output/video/GDIRenderer.cpp
+    LIBS += -lgdiplus -lgdi32
+  }
+  config_direct2d {
     DEFINES *= QTAV_HAVE_DIRECT2D=1
     !*msvc*: INCLUDEPATH += $$PROJECTROOT/contrib/d2d1headers
-    SOURCES += Direct2DRenderer.cpp
-    HEADERS += QtAV/private/Direct2DRenderer_p.h
-    SDK_HEADERS += QtAV/Direct2DRenderer.h
+    SOURCES += output/video/Direct2DRenderer.cpp
     #LIBS += -lD2d1
-}
-config_xv {
+  }
+  config_xv {
     DEFINES *= QTAV_HAVE_XV=1
-    SOURCES += XVRenderer.cpp
-    HEADERS += QtAV/private/XVRenderer_p.h
-    SDK_HEADERS += QtAV/XVRenderer.h
+    SOURCES += output/video/XVRenderer.cpp
     LIBS += -lXv
+  }
 }
-config_gl {
-    QT *= opengl
-    DEFINES *= QTAV_HAVE_GL=1
-    SOURCES += GLWidgetRenderer.cpp
-    HEADERS += QtAV/private/GLWidgetRenderer_p.h
-    SDK_HEADERS += QtAV/GLWidgetRenderer.h
-    OTHER_FILES += shaders/yuv_rgb.f.glsl shaders/rgb.f.glsl
-}
+
 CONFIG += config_cuda #config_dllapi config_dllapi_cuda
 #CONFIG += config_cuda_link
 config_cuda {
     DEFINES += QTAV_HAVE_CUDA=1
     HEADERS += cuda/dllapi/nv_inc.h cuda/helper_cuda.h
-    SOURCES += VideoDecoderCUDA.cpp
+    SOURCES += codec/video/VideoDecoderCUDA.cpp
     INCLUDEPATH += $$PWD/cuda cuda/dllapi
     config_dllapi:config_dllapi_cuda {
         DEFINES += QTAV_HAVE_DLLAPI_CUDA=1
@@ -187,78 +196,126 @@ include(../depends/dllapi/src/libdllapi.pri)
 }
 config_dxva {
     DEFINES *= QTAV_HAVE_DXVA=1
-    SOURCES += VideoDecoderDXVA.cpp
-    LIBS += -lOle32
+    SOURCES += codec/video/VideoDecoderDXVA.cpp
+    LIBS += -lole32
 }
 config_vaapi* {
     DEFINES *= QTAV_HAVE_VAAPI=1
-    SOURCES += VideoDecoderVAAPI.cpp
+    SOURCES += codec/video/VideoDecoderVAAPI.cpp  vaapi/vaapi_helper.cpp vaapi/SurfaceInteropVAAPI.cpp
+    HEADERS += vaapi/vaapi_helper.h  vaapi/SurfaceInteropVAAPI.h
     LIBS += -lva #dynamic load va-glx va-x11 using dllapi
 }
 config_libcedarv {
     DEFINES *= QTAV_HAVE_CEDARV=1
-    SOURCES += VideoDecoderCedarv.cpp
+    QMAKE_CXXFLAGS *= -march=armv7-a -mfpu=neon 
+    SOURCES += codec/video/VideoDecoderCedarv.cpp
     LIBS += -lvecore -lcedarv
 }
 macx:!ios: CONFIG += config_vda
 config_vda {
     DEFINES *= QTAV_HAVE_VDA=1
-    SOURCES += VideoDecoderVDA.cpp
+    SOURCES += codec/video/VideoDecoderVDA.cpp
     LIBS += -framework VideoDecodeAcceleration -framework CoreVideo
 }
+
+config_gl {
+    QT *= opengl
+    DEFINES *= QTAV_HAVE_GL=1
+    SOURCES += output/video/GLWidgetRenderer2.cpp
+    SDK_HEADERS += QtAV/GLWidgetRenderer2.h
+    !contains(QT_CONFIG, dynamicgl) { #dynamicgl does not support old gl1 functions which used in GLWidgetRenderer
+        DEFINES *= QTAV_HAVE_GL1
+        SOURCES += output/video/GLWidgetRenderer.cpp
+        SDK_HEADERS += QtAV/GLWidgetRenderer.h
+    }
+}
+config_gl|config_opengl {
+  OTHER_FILES += shaders/planar.f.glsl shaders/rgb.f.glsl
+  SDK_HEADERS *= \
+    QtAV/OpenGLRendererBase.h \
+    QtAV/OpenGLVideo.h \
+    QtAV/VideoShader.h
+  SDK_PRIVATE_HEADERS = \
+    QtAV/private/OpenGLRendererBase_p.h
+  HEADERS *= \
+    utils/OpenGLHelper.h \
+    ShaderManager.h
+  SOURCES *= \
+    output/video/OpenGLRendererBase.cpp \
+    OpenGLVideo.cpp \
+    VideoShader.cpp \
+    ShaderManager.cpp \
+    utils/OpenGLHelper.cpp
+}
+config_openglwindow {
+  SDK_HEADERS *= QtAV/OpenGLWindowRenderer.h
+  SOURCES *= output/video/OpenGLWindowRenderer.cpp
+  !gui_only {
+    SDK_HEADERS *= QtAV/OpenGLWidgetRenderer.h
+    SOURCES *= output/video/OpenGLWidgetRenderer.cpp
+  }
+}
+config_libass {
+#link against libass instead of dynamic load
+  LIBS += -lass
+  SOURCES *= subtitle/SubtitleProcessorLibASS.cpp
+}
 SOURCES += \
-    QtAV_Compat.cpp \
+    AVCompat.cpp \
     QtAV_Global.cpp \
+    subtitle/CharsetDetector.cpp \
+    subtitle/PlainText.cpp \
+    subtitle/Subtitle.cpp \
+    subtitle/SubtitleProcessor.cpp \
+    subtitle/SubtitleProcessorFFmpeg.cpp \
     utils/GPUMemCopy.cpp \
+    QAVIOContext.cpp \
     AudioThread.cpp \
     AVThread.cpp \
-    AudioDecoder.cpp \
     AudioFormat.cpp \
     AudioFrame.cpp \
-    AudioOutput.cpp \
-    AudioOutputTypes.cpp \
     AudioResampler.cpp \
     AudioResamplerTypes.cpp \
-    AVDecoder.cpp \
+    codec/AVDecoder.cpp \
+    codec/audio/AudioDecoder.cpp \
     AVDemuxer.cpp \
     AVDemuxThread.cpp \
     ColorTransform.cpp \
     Frame.cpp \
-    Filter.cpp \
-    FilterContext.cpp \
-    FilterManager.cpp \
-    GraphicsItemRenderer.cpp \
+    filter/Filter.cpp \
+    filter/FilterContext.cpp \
+    filter/FilterManager.cpp \
+    filter/LibAVFilter.cpp \
+    filter/SubtitleFilter.cpp \
     ImageConverter.cpp \
     ImageConverterFF.cpp \
-    QPainterRenderer.cpp \
-    OSD.cpp \
-    OSDFilter.cpp \
     Packet.cpp \
     AVError.cpp \
     AVPlayer.cpp \
+    AVClock.cpp \
     VideoCapture.cpp \
     VideoFormat.cpp \
     VideoFrame.cpp \
-    VideoRenderer.cpp \
-    VideoRendererTypes.cpp \
-    VideoOutput.cpp \
-    VideoOutputEventFilter.cpp \
-    WidgetRenderer.cpp \
-    AVOutput.cpp \
-    OutputSet.cpp \
-    AVClock.cpp \
+    output/audio/AudioOutput.cpp \
+    output/audio/AudioOutputTypes.cpp \
+    output/video/VideoRenderer.cpp \
+    output/video/VideoRendererTypes.cpp \
+    output/video/VideoOutput.cpp \
+    output/video/QPainterRenderer.cpp \
+    output/AVOutput.cpp \
+    output/OutputSet.cpp \
     Statistics.cpp \
-    VideoDecoder.cpp \
-    VideoDecoderTypes.cpp \
-    VideoDecoderFFmpeg.cpp \
-    VideoDecoderFFmpegHW.cpp \
+    codec/video/VideoDecoder.cpp \
+    codec/video/VideoDecoderTypes.cpp \
+    codec/video/VideoDecoderFFmpeg.cpp \
+    codec/video/VideoDecoderFFmpegHW.cpp \
     VideoThread.cpp \
-    QAVIOContext.cpp \
     CommonTypes.cpp
 
 SDK_HEADERS *= \
     QtAV/QtAV.h \
     QtAV/dptr.h \
+    QtAV/prepost.h \
     QtAV/QtAV_Global.h \
     QtAV/AudioResampler.h \
     QtAV/AudioResamplerTypes.h \
@@ -269,17 +326,14 @@ SDK_HEADERS *= \
     QtAV/AudioOutputTypes.h \
     QtAV/AVDecoder.h \
     QtAV/AVDemuxer.h \
-    QtAV/BlockingQueue.h \
     QtAV/CommonTypes.h \
     QtAV/Filter.h \
     QtAV/FilterContext.h \
+    QtAV/LibAVFilter.h \
     QtAV/Frame.h \
-    QtAV/GraphicsItemRenderer.h \
     QtAV/ImageConverter.h \
     QtAV/ImageConverterTypes.h \
     QtAV/QPainterRenderer.h \
-    QtAV/OSD.h \
-    QtAV/OSDFilter.h \
     QtAV/Packet.h \
     QtAV/AVError.h \
     QtAV/AVPlayer.h \
@@ -287,35 +341,26 @@ SDK_HEADERS *= \
     QtAV/VideoRenderer.h \
     QtAV/VideoRendererTypes.h \
     QtAV/VideoOutput.h \
-    QtAV/WidgetRenderer.h \
     QtAV/AVOutput.h \
     QtAV/AVClock.h \
     QtAV/VideoDecoder.h \
     QtAV/VideoDecoderTypes.h \
+    QtAV/VideoDecoderFFmpegHW.h \
     QtAV/VideoFormat.h \
     QtAV/VideoFrame.h \
     QtAV/FactoryDefine.h \
     QtAV/Statistics.h \
+    QtAV/Subtitle.h \
+    QtAV/SubtitleFilter.h \
     QtAV/SurfaceInterop.h \
     QtAV/version.h
 
-
-HEADERS *= \
-    $$SDK_HEADERS \
-    utils/GPUMemCopy.h \
-    QtAV/prepost.h \
-    QtAV/AVDemuxThread.h \
-    QtAV/AVThread.h \
-    QtAV/AudioThread.h \
-    QtAV/VideoThread.h \
-    QtAV/ColorTransform.h \
-    QtAV/VideoOutputEventFilter.h \
-    QtAV/OutputSet.h \
-    QtAV/QtAV_Compat.h \
-    QtAV/QAVIOContext.h \
-    QtAV/singleton.h \
-    QtAV/factory.h \
-    QtAV/FilterManager.h \
+SDK_PRIVATE_HEADERS *= \
+    QtAV/private/factory.h \
+    QtAV/private/mkid.h \
+    QtAV/private/singleton.h \
+    QtAV/private/SubtitleProcessor.h \
+    QtAV/private/AVCompat.h \
     QtAV/private/AudioOutput_p.h \
     QtAV/private/AudioResampler_p.h \
     QtAV/private/AVThread_p.h \
@@ -323,14 +368,94 @@ HEADERS *= \
     QtAV/private/AVOutput_p.h \
     QtAV/private/Filter_p.h \
     QtAV/private/Frame_p.h \
-    QtAV/private/GraphicsItemRenderer_p.h \
     QtAV/private/ImageConverter_p.h \
+    QtAV/private/VideoShader_p.h \
     QtAV/private/VideoDecoder_p.h \
     QtAV/private/VideoDecoderFFmpegHW_p.h \
-    QtAV/VideoDecoderFFmpegHW.h \
     QtAV/private/VideoRenderer_p.h \
-    QtAV/private/QPainterRenderer_p.h \
-    QtAV/private/WidgetRenderer_p.h
+    QtAV/private/QPainterRenderer_p.h
 
-SDK_INCLUDE_FOLDER = QtAV
+# QtAV/private/* may be used by developers to extend QtAV features without changing QtAV library
+# headers not in QtAV/ and it's subdirs are used only by QtAV internally
+HEADERS *= \
+    $$SDK_HEADERS \
+    $$SDK_PRIVATE_HEADERS \
+    QAVIOContext.h \
+    filter/FilterManager.h \
+    subtitle/CharsetDetector.h \
+    subtitle/PlainText.h \
+    utils/BlockingQueue.h \
+    utils/GPUMemCopy.h \
+    utils/SharedPtr.h \
+    output/OutputSet.h \
+    QtAV/AVDemuxThread.h \
+    QtAV/AVThread.h \
+    QtAV/AudioThread.h \
+    QtAV/VideoThread.h \
+    QtAV/ColorTransform.h
+
+
+# from mkspecs/features/qt_module.prf
+# OS X and iOS frameworks
+mac_framework { # from common.pri
+   #QMAKE_FRAMEWORK_VERSION = 4.0
+   CONFIG += lib_bundle sliced_bundle qt_framework
+   CONFIG -= qt_install_headers #no need to install these as well
+   !debug_and_release|!build_all|CONFIG(release, debug|release) {
+        FRAMEWORK_HEADERS.version = Versions
+        FRAMEWORK_HEADERS.files = $$SDK_HEADERS
+        FRAMEWORK_HEADERS.path = Headers
+        FRAMEWORK_PRIVATE_HEADERS.files = $$SDK_PRIVATE_HEADERS
+        FRAMEWORK_PRIVATE_HEADERS.path = Headers/$$VERSION/$$MODULE_INCNAME/private
+        QMAKE_BUNDLE_DATA += FRAMEWORK_HEADERS FRAMEWORK_PRIVATE_HEADERS
+   }
+}
+
+mac {
+   CONFIG += explicitlib
+   macx-g++ {
+       QMAKE_CFLAGS += -fconstant-cfstrings
+       QMAKE_CXXFLAGS += -fconstant-cfstrings
+   }
+}
+
+
+unix:!android:!mac {
+#debian
+DEB_INSTALL_LIST = .$$[QT_INSTALL_LIBS]/libQtAV.so.*
+libqtav.target = libqtav.install
+libqtav.commands = echo \"$$join(DEB_INSTALL_LIST, \\n)\" >$$PROJECTROOT/debian/$${libqtav.target}
+QMAKE_EXTRA_TARGETS += libqtav
+target.depends *= $${libqtav.target}
+
+DEB_INSTALL_LIST = $$join(SDK_HEADERS, \\n.$$[QT_INSTALL_HEADERS]/, .$$[QT_INSTALL_HEADERS]/)
+DEB_INSTALL_LIST += .$$[QT_INSTALL_LIBS]/libQtAV.prl .$$[QT_INSTALL_LIBS]/libQtAV.so
+DEB_INSTALL_LIST += .$$[QT_INSTALL_BINS]/../mkspecs/features/av.prf .$$[QT_INSTALL_BINS]/../mkspecs/modules/qt_lib_av.pri
+qtav_dev.target = qtav-dev.install
+qtav_dev.commands = echo \"$$join(DEB_INSTALL_LIST, \\n)\" >$$PROJECTROOT/debian/$${qtav_dev.target}
+QMAKE_EXTRA_TARGETS += qtav_dev
+target.depends *= $${qtav_dev.target}
+
+DEB_INSTALL_LIST = $$join(SDK_PRIVATE_HEADERS, \\n.$$[QT_INSTALL_HEADERS]/QtAV/*/, .$$[QT_INSTALL_HEADERS]/QtAV/*/)
+DEB_INSTALL_LIST += .$$[QT_INSTALL_BINS]/../mkspecs/modules/qt_lib_av_private.pri
+qtav_private_dev.target = qtav-private-dev.install
+qtav_private_dev.commands = echo \"$$join(DEB_INSTALL_LIST, \\n)\" >$$PROJECTROOT/debian/$${qtav_private_dev.target}
+QMAKE_EXTRA_TARGETS += qtav_private_dev
+target.depends *= $${qtav_private_dev.target}
+
+qtav_dev_links.target = qtav-dev.links
+qtav_dev_links.commands = echo \"$$[QT_INSTALL_LIBS]/libQtAV.so $$[QT_INSTALL_LIBS]/libQt$${QT_MAJOR_VERSION}AV.so\" >$$PROJECTROOT/debian/$${qtav_dev_links.target}
+QMAKE_EXTRA_TARGETS *= qtav_dev_links
+target.depends *= $${qtav_dev_links.target}
+}
+
+MODULE_INCNAME = QtAV
+MODULE_VERSION = $$VERSION
+#use Qt version. limited by qmake
+# windows: Qt5AV.dll, not Qt1AV.dll
+!mac_framework: MODULE_VERSION = $${QT_MAJOR_VERSION}.$${QT_MINOR_VERSION}.$${QT_PATCH_VERSION}
 include($$PROJECTROOT/deploy.pri)
+
+icon.files = $$PWD/$${TARGET}.svg
+icon.path = /usr/share/icons/hicolor/64x64/apps
+INSTALLS += icon

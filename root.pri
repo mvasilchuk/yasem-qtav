@@ -53,7 +53,7 @@ defineTest(testArch) {
   test_dir = $$_PRO_FILE_PWD_/tests/arch
   test_out_dir = $$shadowed($$test_dir)
   qtRunCommandQuitly("$$QMAKE_MKDIR $$system_path($$test_out_dir)")  #mkpath. but common.pri may not included
-  win32:test_cmd_base = "cd /d $$system_quote($$system_path($$test_out_dir)) &&"
+  contains(QMAKE_HOST.os,Windows): test_cmd_base = "cd /d $$system_quote($$system_path($$test_out_dir)) &&"
   else:test_cmd_base = "cd $$system_quote($$system_path($$test_out_dir)) &&"
   # Disable qmake features which are typically counterproductive for tests
   qmake_configs = "\"CONFIG -= qt debug_and_release app_bundle lib_bundle\""
@@ -85,7 +85,7 @@ defineTest(testArch) {
 
 #cache mkspecs. compare mkspec with cached one. if not equal, remove old cache to run new compile tests
 #Qt5 does not have QMAKE_MKSPECS, use QMAKE_SPEC, QMAKE_XSPEC
-isEmpty(mkspecs_cached)|!isEmpty(mkspecs_cached):!isEqual(mkspecs_cached, $$mkspecs_build) {
+isEmpty(mkspecs_cached)|!isEqual(mkspecs_cached, $$mkspecs_build) {
     CONFIG += recheck
     testArch()
 } else {
@@ -97,6 +97,19 @@ cache(BUILD_DIR, set, BUILD_DIR)
 cache(SOURCE_ROOT, set, SOURCE_ROOT)
 cache(mkspecs_cached, set, mkspecs_build)
 
+# no-framework can be defined in user.conf. default is the same as QT_CONFIG
+MAC_LIB = mac_dylib
+no-framework {
+  cache(CONFIG, add, MAC_LIB)
+} else {
+  cache(CONFIG, sub, MAC_LIB)
+}
+NO_WIDGETS = no_widgets
+no-widgets {
+  cache(CONFIG, add, NO_WIDGETS)
+} else {
+  cache(CONFIG, sub, NO_WIDGETS)
+}
 defineTest(runConfigTests) {
   no_config_tests:return(false)
 #config.tests

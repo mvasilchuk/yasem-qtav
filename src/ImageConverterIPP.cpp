@@ -19,10 +19,11 @@
     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 ******************************************************************************/
 
-#include <QtAV/ImageConverter.h>
-#include <private/ImageConverter_p.h>
-#include <QtAV/QtAV_Compat.h>
-#include "prepost.h"
+#include "QtAV/ImageConverter.h"
+#include "QtAV/private/ImageConverter_p.h"
+#include "QtAV/private/AVCompat.h"
+#include "QtAV/private/mkid.h"
+#include "QtAV/prepost.h"
 
 #if QTAV_HAVE(IPP)
 #include <ipp.h>
@@ -43,7 +44,7 @@ protected:
     virtual bool prepareData(); //Allocate memory for out data
 };
 
-ImageConverterId ImageConverterId_IPP = 2;
+ImageConverterId ImageConverterId_IPP = mkid32base36_3<'I', 'P', 'P'>::value;
 FACTORY_REGISTER_ID_AUTO(ImageConverter, IPP, "IPP")
 
 void RegisterImageConverterIPP_Man()

@@ -19,23 +19,21 @@
     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 ******************************************************************************/
 
-#include <QtAV/VideoThread.h>
-#include <QtAV/private/AVThread_p.h>
-#include <QtAV/Packet.h>
-#include <QtAV/AVClock.h>
-#include <QtAV/VideoCapture.h>
-#include <QtAV/VideoDecoder.h>
-#include <QtAV/VideoRenderer.h>
-#include <QtAV/ImageConverter.h>
+#include "QtAV/VideoThread.h"
+#include "QtAV/private/AVThread_p.h"
+#include "QtAV/Packet.h"
+#include "QtAV/AVClock.h"
+#include "QtAV/VideoCapture.h"
+#include "QtAV/VideoDecoder.h"
+#include "QtAV/VideoRenderer.h"
+#include "QtAV/ImageConverter.h"
+#include "QtAV/Statistics.h"
+#include "QtAV/Filter.h"
+#include "QtAV/FilterContext.h"
+#include "QtAV/ImageConverterTypes.h"
+#include "output/OutputSet.h"
+#include "QtAV/private/AVCompat.h"
 #include <QtCore/QFileInfo>
-#include <QtAV/Statistics.h>
-#include <QtAV/Filter.h>
-#include <QtAV/FilterContext.h>
-#include <QtAV/OutputSet.h>
-#include <QtAV/ImageConverterTypes.h>
-#include <QtAV/QtAV_Compat.h>
-
-#define PIX_FMT PIX_FMT_RGB32 //PIX_FMT_YUV420P
 
 namespace QtAV {
 
@@ -46,21 +44,25 @@ public:
         AVThreadPrivate()
       , conv(0)
       , capture(0)
+      , filter_context(0)
     {
         conv = ImageConverterFactory::create(ImageConverterId_FF); //TODO: set in AVPlayer
-        conv->setOutFormat(PIX_FMT); //vo->defaultFormat
+        conv->setOutFormat(VideoFormat::Format_RGB32); //vo->defaultFormat
     }
     ~VideoThreadPrivate() {
         if (conv) {
             delete conv;
             conv = 0;
         }
+        //not neccesary context is managed by filters.
+        filter_context = 0;
     }
 
     ImageConverter *conv;
     double pts; //current decoded pts. for capture. TODO: remove
     //QImage image; //use QByteArray? Then must allocate a picture in ImageConverter, see VideoDecoder
     VideoCapture *capture;
+    VideoFilterContext *filter_context;//TODO: use own smart ptr. QSharedPointer "=" is ugly
 };
 
 VideoThread::VideoThread(QObject *parent) :
@@ -145,11 +147,11 @@ void VideoThread::run()
     if (!d.dec || !d.dec->isAvailable() || !d.outputSet)// || !d.conv)
         return;
     resetState();
+    //not neccesary context is managed by filters.
+    d.filter_context = 0;
     VideoDecoder *dec = static_cast<VideoDecoder*>(d.dec);
-    if (dec) {
-        //used to initialize the decoder's frame size
-        dec->resizeVideoFrame(0, 0);
-    }
+    //used to initialize the decoder's frame size
+    dec->resizeVideoFrame(0, 0);
     Packet pkt;
     /*!
      * if we skip some frames(e.g. seek, drop frames to speed up), then then first frame to decode must
@@ -285,6 +287,7 @@ void VideoThread::run()
             continue;
         }
         d.render_pts0 = 0;
+        frame.setTimestamp(pts);
         frame.setImageConverter(d.conv);
         Q_ASSERT(d.statistics);
         d.statistics->video.current_time = QTime(0, 0, 0).addMSecs(int(pts * 1000.0)); //TODO: is it expensive?
@@ -299,10 +302,14 @@ void VideoThread::run()
                     if (d.stop) {
                         break;
                     }
-                    if (!filter->isEnabled())
+                    VideoFilter *vf = static_cast<VideoFilter*>(filter);
+                    if (!vf->isEnabled())
                         continue;
-                    filter->process(d.filter_context, d.statistics, &frame);
-                    frame.setImageConverter(d.conv); //frame may be changed
+                    vf->prepareContext(d.filter_context, d.statistics, &frame);
+                    vf->apply(d.statistics, &frame);
+                    //frame may be changed
+                    frame.setImageConverter(d.conv);
+                    frame.setTimestamp(pts);
                 }
             }
         }
@@ -328,7 +335,7 @@ void VideoThread::run()
          */
         d.outputSet->lock();
         QList<AVOutput *> outputs = d.outputSet->outputs();
-        if (outputs.size() > 1) {
+        if (outputs.size() > 1) { //FIXME!
             if (!frame.convertTo(VideoFormat::Format_RGB32)) {
                 /*
                  * use VideoFormat::Format_User to deliver user defined frame
@@ -342,9 +349,9 @@ void VideoThread::run()
             VideoRenderer *vo = 0;
             if (!outputs.isEmpty())
                 vo = static_cast<VideoRenderer*>(outputs.first());
-            if (vo && !vo->isSupported(frame.pixelFormat())
+            if (vo && (!vo->isSupported(frame.pixelFormat())
                     || (vo->isPreferredPixelFormatForced() && vo->preferredPixelFormat() != frame.pixelFormat())
-                    ) {
+                    )) {
                 if (!frame.convertTo(vo->preferredPixelFormat())) {
                     /*
                      * use VideoFormat::Format_User to deliver user defined frame
@@ -375,6 +382,7 @@ void VideoThread::run()
                 d.capture->setCaptureName("");
         }
     }
+    d.packets.clear();
     d.capture->cancel();
     d.outputSet->sendVideoFrame(VideoFrame());
     qDebug("Video thread stops running...");

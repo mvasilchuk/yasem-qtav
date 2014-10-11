@@ -23,22 +23,20 @@
 #define QTAV_VIDEORENDERERTYPES_H
 
 #include <QtAV/VideoRenderer.h>
-#include <QtAV/FactoryDefine.h>
 
 namespace QtAV {
 
-class VideoRenderer;
-FACTORY_DECLARE(VideoRenderer)
-
 //Q_AV_EXPORT(dllexport/import) is needed if used out of the library
 //TODO graphics item?
-extern Q_AV_EXPORT VideoRendererId VideoRendererId_QPainter;
 extern Q_AV_EXPORT VideoRendererId VideoRendererId_Widget;
 extern Q_AV_EXPORT VideoRendererId VideoRendererId_GraphicsItem;
 extern Q_AV_EXPORT VideoRendererId VideoRendererId_GLWidget;
 extern Q_AV_EXPORT VideoRendererId VideoRendererId_GDI;
 extern Q_AV_EXPORT VideoRendererId VideoRendererId_Direct2D;
 extern Q_AV_EXPORT VideoRendererId VideoRendererId_XV;
+extern Q_AV_EXPORT VideoRendererId VideoRendererId_GLWidget2;
+extern Q_AV_EXPORT VideoRendererId VideoRendererId_OpenGLWindow;
+extern Q_AV_EXPORT VideoRendererId VideoRendererId_OpenGLWidget;
 
 Q_AV_EXPORT void VideoRenderer_RegisterAll();
 

@@ -22,7 +22,7 @@
 #include "QtAV/AudioFrame.h"
 #include "QtAV/private/Frame_p.h"
 #include "QtAV/AudioResampler.h"
-#include "QtAV/QtAV_Compat.h"
+#include "QtAV/private/AVCompat.h"
 
 
 namespace QtAV {
@@ -56,6 +56,7 @@ public:
         // TODO: setBytesPerLine(), setBits() compute here or from resampler?
         line_sizes.resize(format.planeCount());
         planes.resize(format.planeCount());
+        return true;
     }
 
     AudioFormat format;

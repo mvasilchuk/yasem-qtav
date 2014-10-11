@@ -1,6 +1,6 @@
 /******************************************************************************
     QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2013 Wang Bin <wbsecg1@gmail.com>
+    Copyright (C) 2013-2014 Wang Bin <wbsecg1@gmail.com>
     theoribeiro <theo@fictix.com.br>
 
 *   This file is part of QtAV
@@ -20,15 +20,17 @@
     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 ******************************************************************************/
 
-#include <QmlAV/QQuickItemRenderer.h>
-#include <QmlAV/private/QQuickItemRenderer_p.h>
+#include "QmlAV/QQuickItemRenderer.h"
+#include "QmlAV/private/QQuickItemRenderer_p.h"
+#include "QtCore/QCoreApplication"
 #include <QtQuick/QQuickWindow>
 #include <QtQuick/QSGFlatColorMaterial>
 #include <QtAV/FactoryDefine.h>
 #include <QtAV/AVPlayer.h>
-#include <QmlAV/QmlAVPlayer.h>
 #include <QtAV/VideoRendererTypes.h> //it declares a factory we need
-#include "prepost.h"
+#include <QtAV/prepost.h>
+#include "QmlAV/QmlAVPlayer.h"
+#include "QmlAV/SGVideoNode.h"
 
 namespace QtAV
 {
@@ -48,10 +50,19 @@ VideoRendererId QQuickItemRenderer::id() const
     return VideoRendererId_QQuickItem;
 }
 
-// TODO: yuv
 bool QQuickItemRenderer::isSupported(VideoFormat::PixelFormat pixfmt) const
 {
-    return VideoFormat::isRGB(pixfmt);
+    if (!isOpenGL())
+        return VideoFormat::isRGB(pixfmt);
+    return pixfmt != VideoFormat::Format_YUYV && pixfmt != VideoFormat::Format_UYVY;
+}
+
+bool QQuickItemRenderer::event(QEvent *e)
+{
+    if (e->type() != QEvent::User)
+        return QQuickItem::event(e);
+    update();
+    return true;
 }
 
 void QQuickItemRenderer::geometryChanged(const QRectF &newGeometry, const QRectF &oldGeometry)
@@ -73,13 +84,16 @@ bool QQuickItemRenderer::receiveFrame(const VideoFrame &frame)
     QMutexLocker locker(&d.img_mutex);
     Q_UNUSED(locker);
     d.video_frame = frame;
-    d.image = QImage((uchar*)frame.bits(), frame.width(), frame.height(), frame.imageFormat());
-    QRect r = realROI();
-    if (r != QRect(0, 0, frame.width(), frame.height()))
-        d.image = d.image.copy(r);
-
-    //update(); //why not this?
-    QMetaObject::invokeMethod(this, "update");
+    if (!isOpenGL()) {
+        d.image = QImage((uchar*)frame.bits(), frame.width(), frame.height(), frame.bytesPerLine(), frame.imageFormat());
+        QRect r = realROI();
+        if (r != QRect(0, 0, frame.width(), frame.height()))
+            d.image = d.image.copy(r);
+    }
+    d.frame_changed = true;
+//    update();  // why update slow? because of calling in a different thread?
+    //QMetaObject::invokeMethod(this, "update"); // slower than directly postEvent
+    QCoreApplication::postEvent(this, new QEvent(QEvent::User));
     return true;
 }
 
@@ -119,6 +133,20 @@ void QQuickItemRenderer::setFillMode(FillMode mode)
     emit fillModeChanged(mode);
 }
 
+bool QQuickItemRenderer::isOpenGL() const
+{
+    return d_func().opengl;
+}
+
+void QQuickItemRenderer::setOpenGL(bool o)
+{
+    DPTR_D(QQuickItemRenderer);
+    if (d.opengl == o)
+        return;
+    d.opengl = o;
+    emit openGLChanged();
+}
+
 bool QQuickItemRenderer::needUpdateBackground() const
 {
     DPTR_D(const QQuickItemRenderer);
@@ -135,6 +163,15 @@ void QQuickItemRenderer::drawFrame()
     DPTR_D(QQuickItemRenderer);
     if (!d.node)
         return;
+    if (isOpenGL()) {
+        SGVideoNode *sgvn = static_cast<SGVideoNode*>(d.node);
+        Q_ASSERT(sgvn);
+        sgvn->setTexturedRectGeometry(d.out_rect, normalizedROI(), 0);
+        if (d.frame_changed)
+            sgvn->setCurrentFrame(d.video_frame);
+        d.frame_changed = false;
+        return;
+    }
     if (d.image.isNull()) {
         d.image = QImage(rendererSize(), QImage::Format_RGB32);
         d.image.fill(Qt::black);
@@ -152,8 +189,18 @@ QSGNode *QQuickItemRenderer::updatePaintNode(QSGNode *node, QQuickItem::UpdatePa
 {
     Q_UNUSED(data);
     DPTR_D(QQuickItemRenderer);
+    if (d.frame_changed) {
+        if (!node) {
+            if (isOpenGL()) {
+                node = new SGVideoNode();
+            } else {
+                node = new QSGSimpleTextureNode();
+            }
+        }
+    }
     if (!node) {
-        node = new QSGSimpleTextureNode();
+        d.frame_changed = false;
+        return 0;
     }
     d.node = node;
     handlePaintEvent();

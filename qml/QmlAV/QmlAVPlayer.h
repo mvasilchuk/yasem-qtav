@@ -25,9 +25,14 @@
 #include <QmlAV/Export.h>
 #include <QtCore/QObject>
 #include <QmlAV/QQuickItemRenderer.h>
+#include <QmlAV/MediaMetaData.h>
 
 /*!
- *  Not work: autoPlay, autoLoad
+ *  Qt.Multimedia like api
+ * MISSING:
+ * bufferProgress, error, errorString, metaData
+ * NOT COMPLETE:
+ * seekable
  */
 namespace QtAV {
 class AVPlayer;
@@ -36,6 +41,7 @@ using namespace QtAV;
 class QMLAV_EXPORT QmlAVPlayer : public QObject, public QQmlParserStatus
 {
     Q_OBJECT
+    Q_INTERFACES(QQmlParserStatus)
     Q_PROPERTY(qreal volume READ volume WRITE setVolume NOTIFY volumeChanged)
     Q_PROPERTY(int duration READ duration NOTIFY durationChanged)
     Q_PROPERTY(int position READ position NOTIFY positionChanged)
@@ -45,10 +51,12 @@ class QMLAV_EXPORT QmlAVPlayer : public QObject, public QQmlParserStatus
     Q_PROPERTY(PlaybackState playbackState READ playbackState NOTIFY playbackStateChanged)
     Q_PROPERTY(bool autoPlay READ autoPlay WRITE setAutoPlay NOTIFY autoPlayChanged)
     Q_PROPERTY(bool autoLoad READ isAutoLoad WRITE setAutoLoad NOTIFY autoLoadChanged)
-    Q_PROPERTY(qreal speed READ speed WRITE setSpeed NOTIFY speedChanged)
+    Q_PROPERTY(qreal playbackRate READ playbackRate WRITE setPlaybackRate NOTIFY playbackRateChanged)
     Q_PROPERTY(QUrl source READ source WRITE setSource NOTIFY sourceChanged)
     Q_PROPERTY(int loops READ loopCount WRITE setLoopCount NOTIFY loopCountChanged)
     Q_PROPERTY(bool seekable READ isSeekable NOTIFY seekableChanged)
+    Q_PROPERTY(MediaMetaData *metaData READ metaData CONSTANT)
+    Q_PROPERTY(QObject *mediaObject READ mediaObject)
 
     Q_PROPERTY(ChannelLayout channelLayout READ channelLayout WRITE setChannelLayout NOTIFY channelLayoutChanged)
 
@@ -91,6 +99,8 @@ public:
     QUrl source() const;
     void setSource(const QUrl& url);
 
+    // 0,1: play once. Loop.Infinite: forever.
+    // >1: play loopCount() - 1 times. different from Qt
     int loopCount() const;
     void setLoopCount(int c);
 
@@ -105,8 +115,8 @@ public:
     bool isSeekable() const;
     PlaybackState playbackState() const;
     void setPlaybackState(PlaybackState playbackState);
-    qreal speed() const;
-    void setSpeed(qreal s);
+    qreal playbackRate() const;
+    void setPlaybackRate(qreal s);
     Q_INVOKABLE void play(const QUrl& url);
     AVPlayer *player();
 
@@ -115,6 +125,9 @@ public:
 
     bool autoPlay() const;
     void setAutoPlay(bool autoplay);
+
+    MediaMetaData *metaData() const;
+    QObject *mediaObject() const;
 
     // "FFmpeg", "CUDA", "DXVA", "VAAPI" etc
     QStringList videoCodecs() const;
@@ -149,13 +162,15 @@ Q_SIGNALS:
     void videoOutChanged();
     void playbackStateChanged();
     void autoPlayChanged();
-    void speedChanged();
+    void playbackRateChanged();
     void paused();
     void stopped();
     void playing();
     void seekableChanged();
     void videoCodecPriorityChanged();
     void channelLayoutChanged();
+
+    void mediaObjectChanged();
 
 private Q_SLOTS:
     // connect to signals from player
@@ -175,6 +190,8 @@ private:
     QUrl mSource;
     QStringList mVideoCodecs;
     ChannelLayout mChannelLayout;
+
+    QScopedPointer<MediaMetaData> m_metaData;
 };
 
 #endif // QTAV_QML_AVPLAYER_H

@@ -19,16 +19,16 @@
     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 ******************************************************************************/
 
-#include <QtAV/AudioThread.h>
-#include <QtAV/private/AVThread_p.h>
-#include <QtAV/AudioDecoder.h>
-#include <QtAV/Packet.h>
-#include <QtAV/AudioFormat.h>
-#include <QtAV/AudioOutput.h>
-#include <QtAV/AudioResampler.h>
-#include <QtAV/AVClock.h>
-#include <QtAV/OutputSet.h>
-#include <QtAV/QtAV_Compat.h>
+#include "QtAV/AudioThread.h"
+#include "QtAV/private/AVThread_p.h"
+#include "QtAV/AudioDecoder.h"
+#include "QtAV/Packet.h"
+#include "QtAV/AudioFormat.h"
+#include "QtAV/AudioOutput.h"
+#include "QtAV/AudioResampler.h"
+#include "QtAV/AVClock.h"
+#include "output/OutputSet.h"
+#include "QtAV/private/AVCompat.h"
 #include <QtCore/QCoreApplication>
 
 namespace QtAV {
@@ -67,7 +67,6 @@ void AudioThread::run()
     // first() is not null even if list empty
     if (!d.outputSet->outputs().isEmpty())
         ao = static_cast<AudioOutput*>(d.outputSet->outputs().first()); //TODO: not here
-    static const double max_len = 0.02; //TODO: how to choose?
     d.init();
     //TODO: bool need_sync in private class
     bool is_external_clock = d.clock->clockType() == AVClock::ExternalClock;
@@ -202,7 +201,7 @@ void AudioThread::run()
         QByteArray decoded(dec->data());
         int decodedSize = decoded.size();
         int decodedPos = 0;
-        qreal delay =0;
+        qreal delay = 0;
         //AudioFormat.durationForBytes() calculates int type internally. not accurate
         AudioFormat &af = dec->resampler()->inAudioFormat();
         qreal byte_rate = af.bytesPerSecond();
@@ -211,9 +210,10 @@ void AudioThread::run()
                 qDebug("audio thread stop after decode()");
                 break;
             }
-            int chunk = qMin(decodedSize, 1024*4);//int(max_len*byte_rate));
+            // TODO: set to format.bytesPerFrame()*1024?
+            const int chunk = qMin(decodedSize, has_ao ? ao->bufferSize() : 1024*4);//int(max_len*byte_rate));
             //AudioFormat.bytesForDuration
-            qreal chunk_delay = (qreal)chunk/(qreal)byte_rate;
+            const qreal chunk_delay = (qreal)chunk/(qreal)byte_rate;
             pkt.pts += chunk_delay;
             QByteArray decodedChunk(chunk, 0); //volume == 0 || mute
             if (has_ao) {
@@ -261,6 +261,7 @@ void AudioThread::run()
                 }
                 ao->waitForNextBuffer();
                 ao->receiveData(decodedChunk, pkt.pts);
+                ao->play();
                 d.clock->updateValue(ao->timestamp());
             } else {
                 d.clock->updateDelay(delay += chunk_delay);
@@ -290,6 +291,7 @@ void AudioThread::run()
 
         d.last_pts = d.clock->value(); //not pkt.pts! the delay is updated!
     }
+    d.packets.clear();
     qDebug("Audio thread stops running...");
 }
 

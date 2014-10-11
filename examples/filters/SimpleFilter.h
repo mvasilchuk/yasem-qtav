@@ -25,17 +25,19 @@
 #include <QtAV/Filter.h>
 #include <QtCore/QTime>
 #include <QtGui/QMatrix4x4>
+#include <QWidget>
 
 namespace QtAV {
 
-class SimpleFilter : public Filter
+class SimpleFilter : public VideoFilter
 {
+    Q_OBJECT
 public:
-    SimpleFilter();
+    SimpleFilter(QWidget *parent = 0);
     virtual ~SimpleFilter();
     void enableRotate(bool r);
     void enableWaveEffect(bool w);
-    virtual FilterContext::Type contextType() const { return FilterContext::QtPainter; }
+    virtual VideoFilterContext::Type contextType() const { return VideoFilterContext::QtPainter; }
     void setText(const QString& text);
     QString text() const;
     //show image if text is null
@@ -43,16 +45,15 @@ public:
 
     void prepare();
 
-    void start();
-    void stop();
 protected:
-    virtual void process();
+    virtual void process(Statistics* statistics, VideoFrame* frame);
+    virtual void timerEvent(QTimerEvent *);
 private:
     bool mCanRot;
     bool mWave;
+    QTime mTime;
     qreal mStartValue;
     QString mText;
-    QTime mTime;
     QMatrix4x4 mMat;
     QImage mImage;
 };

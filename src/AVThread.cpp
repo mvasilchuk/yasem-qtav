@@ -19,11 +19,11 @@
     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 ******************************************************************************/
 
-#include <QtAV/AVThread.h>
-#include <QtAV/private/AVThread_p.h>
-#include <QtAV/AVOutput.h>
-#include <QtAV/Filter.h>
-#include <QtAV/OutputSet.h>
+#include "QtAV/AVThread.h"
+#include "QtAV/private/AVThread_p.h"
+#include "QtAV/AVOutput.h"
+#include "QtAV/Filter.h"
+#include "output/OutputSet.h"
 
 namespace QtAV {
 
@@ -39,9 +39,12 @@ AVThreadPrivate::~AVThreadPrivate() {
     ready_cond.wakeAll();
     packets.setBlocking(true); //???
     packets.clear();
-    //not neccesary context is managed by filters.
-    filter_context = 0;
-    qDeleteAll(filters); //TODO: is it safe?
+    QList<Filter*>::iterator it = filters.begin();
+    while (it != filters.end()) {
+        if ((*it)->isOwnedByTarget() && !(*it)->parent())
+            delete *it;
+        ++it;
+    }
     filters.clear();
 }
 
@@ -241,8 +244,6 @@ void AVThread::resetState()
     d.demux_end = false;
     d.packets.setBlocking(true);
     d.packets.clear();
-    //not neccesary context is managed by filters.
-    d.filter_context = 0;
     QMutexLocker lock(&d.ready_mutex);
     d.ready = true;
     d.ready_cond.wakeOne();

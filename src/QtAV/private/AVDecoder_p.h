@@ -26,11 +26,11 @@
 #include <QtCore/QHash>
 #include <QtCore/QMutex>
 #include <QtCore/QThread>
-#include <QtAV/QtAV_Compat.h>
+#include "QtAV/private/AVCompat.h"
 
 namespace QtAV {
 
-class Q_AV_EXPORT AVDecoderPrivate : public DPtrPrivate<AVDecoder>
+class Q_AV_PRIVATE_EXPORT AVDecoderPrivate : public DPtrPrivate<AVDecoder>
 {
 public:
     AVDecoderPrivate():

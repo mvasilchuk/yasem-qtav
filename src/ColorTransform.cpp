@@ -24,10 +24,13 @@
 
 namespace QtAV {
 
-// TODO: type bt601 etc
-QMatrix4x4 ColorTransform::YUV2RGB()
-{
-    return QMatrix4x4(
+static const QMatrix4x4 kGBR2RGB = QMatrix4x4(0, 0, 1, 0,
+                                              1, 0, 0, 0,
+                                              0, 1, 0, 0,
+                                              0, 0, 0, 1);
+
+static const QMatrix4x4 yuv2rgb_bt601 =
+           QMatrix4x4(
                 1.0f,  0.000f,  1.402f, 0.0f,
                 1.0f, -0.344f, -0.714f, 0.0f,
                 1.0f,  1.772f,  0.000f, 0.0f,
@@ -38,14 +41,40 @@ QMatrix4x4 ColorTransform::YUV2RGB()
                 0.0f, 1.0f, 0.0f, -0.5f,
                 0.0f, 0.0f, 1.0f, -0.5f,
                 0.0f, 0.0f, 0.0f, 1.0f);
-}
 
+static const QMatrix4x4 yuv2rgb_bt709 =
+           QMatrix4x4(
+                1.0f,  0.000f,  1.5701f, 0.0f,
+                1.0f, -0.187f, -0.4664f, 0.0f,
+                1.0f,  1.8556f, 0.000f,  0.0f,
+                0.0f,  0.000f,  0.000f,  1.0f)
+            *
+            QMatrix4x4(
+                1.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 1.0f, 0.0f, -0.5f,
+                0.0f, 0.0f, 1.0f, -0.5f,
+                0.0f, 0.0f, 0.0f, 1.0f);
+
+const QMatrix4x4& ColorTransform::YUV2RGB(ColorSpace cs)
+{
+    switch (cs) {
+    case BT601:
+        return yuv2rgb_bt601;
+    case BT709:
+        return yuv2rgb_bt709;
+    default:
+        return yuv2rgb_bt601;
+    }
+    return yuv2rgb_bt601;
+}
 
 class ColorTransform::Private : public QSharedData
 {
 public:
     Private()
         : recompute(true)
+        , in(ColorTransform::RGB)
+        , out(ColorTransform::RGB)
         , hue(0)
         , saturation(0)
         , contrast(0)
@@ -54,6 +83,8 @@ public:
     Private(const Private& other)
         : QSharedData(other)
         , recompute(true)
+        , in(ColorTransform::RGB)
+        , out(ColorTransform::RGB)
         , hue(0)
         , saturation(0)
         , contrast(0)
@@ -63,12 +94,14 @@ public:
 
     void reset() {
         recompute = true;
+        //in = out = ColorTransform::RGB; ///
         hue = 0;
         saturation = 0;
         contrast = 0;
         brightness = 0;
         M.setToIdentity();
     }
+    // TODO: optimize for other color spaces
     void compute() const {
         recompute = false;
         //http://docs.rainmeter.net/tips/colormatrix-guide
@@ -111,11 +144,33 @@ public:
         );
 
         M = B*C*S*H;
+        // TODO: transform to output color space other than RGB
+        switch (in) {
+        case ColorTransform::RGB:
+            break;
+        case ColorTransform::GBR:
+            M *= kGBR2RGB;
+            break;
+        default:
+            M *= YUV2RGB(in);
+            break;
+        }
+        switch (out) {
+        case ColorTransform::RGB:
+            break;
+        case ColorTransform::GBR:
+            M = kGBR2RGB.inverted() * M;
+            break;
+        default:
+            M = YUV2RGB(out).inverted() * M;
+            break;
+        }
     }
 
     mutable bool recompute;
+    ColorTransform::ColorSpace in, out;
     qreal hue, saturation, contrast, brightness;
-    mutable QMatrix4x4 M;
+    mutable QMatrix4x4 M; // count the transformations between spaces
 };
 
 ColorTransform::ColorTransform()
@@ -125,6 +180,32 @@ ColorTransform::ColorTransform()
 
 ColorTransform::~ColorTransform()
 {
+}
+
+ColorTransform::ColorSpace ColorTransform::inputColorSpace() const
+{
+    return d->in;
+}
+
+void ColorTransform::setInputColorSpace(ColorSpace cs)
+{
+    if (d->in == cs)
+        return;
+    d->in = cs;
+    d->recompute = true; //TODO: only recompute color space transform
+}
+
+ColorTransform::ColorSpace ColorTransform::outputColorSpace() const
+{
+    return d->out;
+}
+
+void ColorTransform::setOutputColorSpace(ColorSpace cs)
+{
+    if (d->out == cs)
+        return;
+    d->out = cs;
+    d->recompute = true; //TODO: only recompute color space transform
 }
 
 QMatrix4x4 ColorTransform::matrix() const

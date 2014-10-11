@@ -36,6 +36,8 @@ class QQuickItemRendererPrivate : public VideoRendererPrivate
 public:
     QQuickItemRendererPrivate():
         VideoRendererPrivate()
+      , opengl(true)
+      , frame_changed(false)
       , fill_mode(QQuickItemRenderer::PreserveAspectFit)
       , texture(0)
       , node(0)
@@ -58,6 +60,10 @@ public:
         }
     }
 
+    //void updateGeometry();
+
+    bool opengl;
+    bool frame_changed;
     QQuickItemRenderer::FillMode fill_mode;
     QSGTexture* texture;
     QSGNode *node;

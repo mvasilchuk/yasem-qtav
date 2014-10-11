@@ -31,7 +31,6 @@
 #include <QtAV/AVPlayer.h>
 #include <QtAV/VideoRendererTypes.h>
 #include <QtAV/VideoOutput.h>
-#include <QtAV/OSDFilter.h>
 
 #include "MainWindow.h"
 
@@ -130,7 +129,7 @@ int main(int argc, char *argv[])
         vo = "gl";
     QString title = "QtAV " /*+ vo + " "*/ + QtAV_Version_String_Long() + " wbsecg1@gmail.com";
 #ifndef QT_NO_OPENGL
-    VideoRendererId vid = VideoRendererId_GLWidget;
+    VideoRendererId vid = VideoRendererId_GLWidget2;
 #else
     VideoRendererId vid = VideoRendererId_Widget;
 #endif
@@ -139,7 +138,7 @@ int main(int argc, char *argv[])
         const char* name;
         VideoRendererId id;
     } vid_map[] = {
-    { "gl", VideoRendererId_GLWidget },
+    { "gl", VideoRendererId_GLWidget2 },
     { "d2d", VideoRendererId_Direct2D },
     { "gdi", VideoRendererId_GDI },
     { "xv", VideoRendererId_XV },
@@ -158,8 +157,6 @@ int main(int argc, char *argv[])
         return 1;
     }
     renderer->widget()->setWindowTitle(title);
-    if (renderer->osdFilter())
-        renderer->osdFilter()->setShowType(OSD::ShowNone);
     //renderer->scaleInRenderer(false);
     renderer->setOutAspectRatioMode(VideoRenderer::VideoAspectRatio);
 
@@ -188,7 +185,7 @@ int main(int argc, char *argv[])
         window.setVideoDecoderNames(vd);
 
 
-    idx = a.arguments().indexOf("--ffmpeg-log");
+    idx = a.arguments().indexOf("--no-ffmpeg-log");
     idxmax = qMax(idx, idxmax);
     if (idx < 0)
         setFFmpegLogHandler(0);

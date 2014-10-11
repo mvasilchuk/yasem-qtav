@@ -19,9 +19,20 @@
 
 isEmpty(COMMON_PRI_INCLUDED): { #begin COMMON_PRI_INCLUDED
 
+mac:contains(QT_CONFIG, qt_framework):!mac_dylib: CONFIG += mac_framework
+
+isEmpty(QMAKE_EXTENSION_SHLIB) {
+  unix {
+    mac|ios: QMAKE_EXTENSION_SHLIB = dylib
+    else: QMAKE_EXTENSION_SHLIB = so #why android is empty?
+  } else:win* {
+    QMAKE_EXTENSION_SHLIB = dll
+  }
+}
+
 CONFIG += profile
 #profiling, -pg is not supported for msvc
-debug:!*msvc*:profile {
+debug:!android:!*msvc*:profile {
 	QMAKE_CXXFLAGS_DEBUG += -pg
 	QMAKE_LFLAGS_DEBUG += -pg
 	QMAKE_CXXFLAGS_DEBUG = $$unique(QMAKE_CXXFLAGS_DEBUG)
@@ -65,7 +76,7 @@ win32-msvc* {
 #################################functions#########################################
 defineTest(qtRunQuitly) {
     #win32 always call windows command
-    win32 { #QMAKE_HOST.os?
+    contains(QMAKE_HOST.os,Windows) {
       system("$$1 2>&1 >nul")|return(false)  #system always call win32 cmd
     } else {
       system("$$1 2>&1 >/dev/null")|return(false)
@@ -82,7 +93,7 @@ defineReplace(qtLibName) {
 	LIBRARY_NAME = $$1
 	CONFIG(debug, debug|release) {
 		!debug_and_release|build_pass {
-			mac:RET = $$member(LIBRARY_NAME, 0)_debug
+                        mac:!mac_framework:RET = $$member(LIBRARY_NAME, 0)_debug
 			else:win32:RET = $$member(LIBRARY_NAME, 0)d
 		}
 	}
@@ -105,19 +116,14 @@ defineReplace(qtLibName) {
 defineReplace(qtStaticLib) {
 	unset(LIB_FULLNAME)
 	LIB_FULLNAME = $$qtLibName($$1, $$2)
-	*msvc*|win32-icc: LIB_FULLNAME = $$member(LIB_FULLNAME, 0).lib
-	else: LIB_FULLNAME = lib$$member(LIB_FULLNAME, 0).a
+        LIB_FULLNAME = $${QMAKE_PREFIX_STATICLIB}$$member(LIB_FULLNAME, 0).$${QMAKE_EXTENSION_STATICLIB}
 	return($$LIB_FULLNAME)
 }
 
 defineReplace(qtSharedLib) {
 	unset(LIB_FULLNAME)
 	LIB_FULLNAME = $$qtLibName($$1, $$2)
-	win32: LIB_FULLNAME = $$member(LIB_FULLNAME, 0).dll
-	else {
-		macx|ios: LIB_FULLNAME = lib$$member(LIB_FULLNAME, 0).$${QMAKE_EXTENSION_SHLIB} #default_post.prf
-		else: LIB_FULLNAME = lib$$member(LIB_FULLNAME, 0).so
-	}
+        LIB_FULLNAME = $${QMAKE_PREFIX_SHLIB}$$member(LIB_FULLNAME, 0).$${QMAKE_EXTENSION_SHLIB} #default_post.prf
 	return($$LIB_FULLNAME)
 }
 
@@ -149,7 +155,7 @@ win32-icc {
   QMAKE_CFLAGS_SSE2 = -xSSE2
   QMAKE_CFLAGS_SSE4_1 = -xSSE4.1
 } else:*msvc* {
-# all x64 processers supports sse2. unknown option for vc
+# all x64 processors supports sse2. unknown option for vc
   #!isEqual(QT_ARCH, x86_64)|!x86_64 {
     QMAKE_CFLAGS_SSE2 = -arch:SSE2
     QMAKE_CFLAGS_SSE4_1 = -arch:SSE2
@@ -265,19 +271,19 @@ defineReplace(shell_quote_unix) {
 }
 ##TODO: see qmake/library/ioutils.cpp
 defineReplace(shell_quote) {
-    win32:isEmpty(QMAKE_SH):return($$shell_quote_win($$1))
+    contains(QMAKE_HOST.os,Windows):isEmpty(QMAKE_SH):return($$shell_quote_win($$1))
     return($$shell_quote_unix($$1))
 }
 
 ##TODO: see qmake/library/ioutils.cpp
 defineReplace(system_quote) {
     isEmpty(1):error("system_quote(arg) requires one argument.")
-    unix:return($$shell_quote_unix($$1))
-    return($$shell_quote_win($$1))
+    contains(QMAKE_HOST.os,Windows): return($$shell_quote_win($$1))
+    return($$shell_quote_unix($$1))
 }
 
 defineReplace(system_path) {
-    win32 {
+    contains(QMAKE_HOST.os,Windows) {
         1 ~= s,/,\\,g #qmake \\=>put \\=>real \?
     } else {
         1 ~= s,\\\\,/,g  ##why is \\\\. real \=>we read \\=>qmake \\\\?

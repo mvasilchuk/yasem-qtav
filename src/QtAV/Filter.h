@@ -22,25 +22,10 @@
 #ifndef QTAV_FILTER_H
 #define QTAV_FILTER_H
 
+#include <QtCore/QObject>
 #include <QtAV/QtAV_Global.h>
 #include <QtAV/FilterContext.h>
-/*
- * QPainterFilter, D2DFilter, ...
- *
- *TODO: force apply. e.g. an animation filter on vo, update vo and apply filter even not video is
- * playing.
- *
- * example:
- *    using namespace QtAV;
- *    Filter *f = new XXFilter();
- *    f.installTo(player);
- *    ...
- *    //f.uninstall() //opional. call it on you need
- *    safeReleaseFilter(&f);
- *    ...
- */
 
-class QByteArray;
 namespace QtAV {
 
 class Filter;
@@ -51,56 +36,97 @@ class Filter;
  */
 Q_AV_EXPORT void safeReleaseFilter(Filter** ppFilter);
 
+class AudioFormat;
 class AVOutput;
 class AVPlayer;
 class FilterPrivate;
 class Statistics;
 class Frame;
 // TODO: QObject?
-class Q_AV_EXPORT Filter
+class Q_AV_EXPORT Filter : public QObject
 {
+    Q_OBJECT
     DPTR_DECLARE_PRIVATE(Filter)
+    Q_PROPERTY(bool enabled READ isEnabled WRITE setEnabled NOTIFY enableChanged)
 public:
-    Filter();
+    Filter(QObject* parent = 0);
     virtual ~Filter();
     //isEnabled() then setContext
     //TODO: parameter FrameContext
-    void setEnabled(bool enabled); //AVComponent.enabled
+    void setEnabled(bool enabled = true); //AVComponent.enabled
     bool isEnabled() const;
 
-    FilterContext* context();
-    virtual FilterContext::Type contextType() const;
-
-    /*
-     * filter.installTo(target,...) calls target.installFilter(filter)
-     * If filter is already registered in FilterManager, then return false
-     * Otherwise, call FilterManager.register(filter) and target.filters.push_back(filter), return true
-     * NOTE: the installed filter will be deleted by the target!
-     */
-    // filter on output. e.g. subtitle
-    bool installTo(AVOutput *output);
-    bool installToAudioThread(AVPlayer *player);
-    bool installToVideoThread(AVPlayer *player);
-
-    /*
-     *
-     */
-    bool uninstall();
     /*!
-     * check context and apply the filter
-     * if context is null, or contextType() != context->type(), then create a right one and assign it to context.
+     * \brief setOwnedByTarget
+     * If a filter is owned by target, it's not safe to access the filter after it's installed to a target.
+     * QtAV will delete the filter internally if filter is owned by target AND it's parent (QObject) is null.
+     * \param value
      */
-    void process(FilterContext *&context, Statistics* statistics, Frame* frame = 0);
-
+    void setOwnedByTarget(bool value = true);
+    // default is false
+    bool isOwnedByTarget() const;
+    // setInput/Output: no need to call installTo
+    // bool setInput(Filter*);
+    // bool setOutput(Filter*);
+    // install to audio/video as an on frame filter. append to the filter chain
+    virtual bool installTo(AVPlayer *player) = 0;
+    // called in destructor automatically
+    bool uninstall();
+signals:
+    void enableChanged(bool);
 protected:
     /*
      * If the filter is in AVThread, it's safe to operate on ref.
      */
-    Filter(FilterPrivate& d);
-    virtual void process();
-    virtual void process(Statistics* statistics, Frame* frame);
+    Filter(FilterPrivate& d, QObject *parent = 0);
 
     DPTR_DECLARE(Filter)
+};
+
+class VideoFilterPrivate;
+class Q_AV_EXPORT VideoFilter : public Filter
+{
+    Q_OBJECT
+    DPTR_DECLARE_PRIVATE(VideoFilter)
+public:
+    VideoFilter(QObject* parent = 0);
+
+    VideoFilterContext* context();
+    virtual VideoFilterContext::Type contextType() const;
+    bool installTo(AVPlayer *player);
+    /*
+     * filter.installTo(target,...) calls target.installFilter(filter)
+     * If filter is already registered in FilterManager, then return false
+     * Otherwise, call FilterManager.register(filter) and target.filters.push_back(filter), return true
+     * NOTE: the installed filter will be deleted by the target if filter is owned by target AND it's parent (QObject) is null.
+     */
+    // install to an output and do not modify frames. e.g. OSD
+    bool installTo(AVOutput *output); //only for video. move to video filter installToRenderer
+    /*!
+     * check context and apply the filter
+     * if context is null, or contextType() != context->type(), then create a right one and assign it to context.
+     */
+    void prepareContext(VideoFilterContext *&context, Statistics* statistics, VideoFrame* frame = 0);
+    void apply(Statistics* statistics, VideoFrame *frame = 0);
+protected:
+    VideoFilter(VideoFilterPrivate& d, QObject *parent = 0);
+    virtual void process(Statistics* statistics, VideoFrame* frame = 0) = 0;
+};
+
+class AudioFilterPrivate;
+class Q_AV_EXPORT AudioFilter : public Filter
+{
+    Q_OBJECT
+    DPTR_DECLARE_PRIVATE(AudioFilter)
+public:
+    AudioFilter(QObject* parent = 0);
+    bool installTo(AVPlayer *player);
+    void apply(Statistics* statistics, const QByteArray& data); //TODO: return delay?
+    void setInputFormat(const AudioFormat& af);
+    AudioFormat& inputFormat() const;
+    virtual qreal apply(const QByteArray& data) = 0;
+protected:
+    AudioFilter(AudioFilterPrivate& d, QObject *parent = 0);
 };
 
 } //namespace QtAV

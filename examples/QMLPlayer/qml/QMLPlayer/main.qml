@@ -22,7 +22,7 @@
 import QtQuick 2.1
 import QtQuick.Dialogs 1.0
 //import QtMultimedia 5.0
-import QtAV 1.3
+import QtAV 1.4
 import QtQuick.Window 2.1
 import "utils.js" as Utils
 
@@ -85,8 +85,34 @@ Rectangle {
         onPaused: {
             control.setPauseState()
         }
-    }
 
+    }
+    Text {
+        id: subtitleLabel
+        horizontalAlignment: Text.AlignHCenter
+        verticalAlignment: Text.AlignBottom
+        font {
+            pixelSize: Utils.scaled(20)
+            bold: true
+        }
+        style: Text.Outline
+        styleColor: "blue"
+        color: "white"
+        anchors.fill: parent
+
+        Subtitle {
+            player: player
+            onContentChanged: {
+                subtitleLabel.text = text
+            }
+        }
+    }
+    MouseArea {
+        anchors.fill: parent
+        onPressed: {
+            control.toggleVisible()
+        }
+    }
     ControlPanel {
         id: control
         anchors {
@@ -113,7 +139,44 @@ Rectangle {
         onVolumeChanged: player.volume = volume
         onOpenFile: fileDialog.open()
         onShowInfo: {
-            help.text = player.source
+            help.text = "<p>" + Utils.htmlEscaped(player.source) + "</p>"
+            if (typeof player.metaData.duration != "undefined")
+                help.text += "<p>" + qsTr("Duration: ") + player.metaData.duration + "</p>"
+            if (typeof player.metaData.title != "undefined")
+                help.text += "<p>" + qsTr("Title") + ": " +player.metaData.title + "</p>"
+            if (typeof player.metaData.albumTitle != "undefined")
+                help.text += "<p>" + qsTr("Album") + ": " + Utils.htmlEscaped(player.metaData.albumTitle) + "</p>"
+            if (typeof player.metaData.title != "undefined")
+                help.text += "<p>" + qsTr("Comment") + ": " + Utils.htmlEscaped(player.metaData.comment) + "</p>"
+            if (typeof player.metaData.year != "undefined")
+                help.text += "<p>" + qsTr("Year") + ": " + player.metaData.year + "</p>"
+            if (typeof player.metaData.date != "undefined")
+                help.text += "<p>" + qsTr("Date") + ": " + player.metaData.date + "</p>"
+            if (typeof player.metaData.author != "undefined")
+                help.text += "<p>" + qsTr("Author") + ": " + Utils.htmlEscaped(player.metaData.author) + "</p>"
+            if (typeof player.metaData.publisher != "undefined")
+                help.text += "<p>" + qsTr("Publisher") + ": " + Utils.htmlEscaped(player.metaData.publisher) + "</p>"
+            if (typeof player.metaData.genre != "undefined")
+                help.text += "<p>" + qsTr("Genre") + ": " + player.metaData.genre + "</p>"
+            if (typeof player.metaData.trackNumber != "undefined")
+                help.text += "<p>" + qsTr("Track") + ": " + player.metaData.trackNumber + "</p>"
+            if (typeof player.metaData.trackCount != "undefined")
+                help.text += "<p>" + qsTr("Track count") + ": " + player.metaData.trackCount + "</p>"
+
+            if (player.hasVideo) {
+                help.text += "<h4>" + qsTr("Video") + "</h4>"
+                        + "<p>" + qsTr("Resolution") + ": " + player.metaData.resolution.width + "x" +  + player.metaData.resolution.height + "</p>"
+                        + "<p>" + qsTr("Codec") + ": " + player.metaData.videoCodec + "</p>"
+                        + "<p>" + qsTr("Frame rate") + ": " + player.metaData.videoFrameRate + "</p>"
+                        + "<p>" + qsTr("Bit rate") + ": " + player.metaData.videoBitRate + "</p>"
+            }
+            if (player.hasAudio) {
+                help.text += "<h4>" + qsTr("Audio") + "</h4>"
+                        + "<p>" + qsTr("Codec") + ": " + player.metaData.audioCodec + "</p>"
+                        + "<p>" + qsTr("Bit rate") + ": " + player.metaData.audioBitRate + "</p>"
+                        + "<p>" + qsTr("Sample rate") + ": " + player.metaData.sampleRate + "</p>"
+                        + "<p>" + qsTr("Channels") + ": " + player.metaData.channelCount + "</p>"
+            }
             donateBtn.visible = false
             help.visible = true
         }
@@ -151,6 +214,13 @@ Rectangle {
                     player.play()
                 }
                 break
+            case Qt.Key_Plus:
+                player.playbackRate += 0.1;
+                console.log("player.playbackRate: " + player.playbackRate);
+                break;
+            case Qt.Key_Minus:
+                player.playbackRate = Math.max(0.1, player.playbackRate - 0.1);
+                break;
             case Qt.Key_F:
                 control.toggleFullScreen()
                 break
@@ -196,14 +266,14 @@ Rectangle {
             onLinkActivated: Qt.openUrlExternally(link)
         }
         function helpText() {
-            return "<h3>QMLPlayer based on QtAV  1.3.4 </h3>"
+            return "<h3>QMLPlayer based on QtAV  1.4.0 </h3>"
              + "<p>Distributed under the terms of LGPLv2.1 or later.</p>"
              + "<p>Copyright (C) 2012-2014 Wang Bin (aka. Lucas Wang) <a href='mailto:wbsecg1@gmail.com'>wbsecg1@gmail.com</a></p>"
              + "<p>Shanghai University->S3 Graphics, Shanghai, China</p>"
              + "<p>Source code: <a href='https://github.com/wang-bin/QtAV'>https://github.com/wang-bin/QtAV</a></p>"
              + "<p>Web Site: <a href='http://wang-bin.github.io/QtAV'>http://wang-bin.github.io/QtAV</a></p>"
              + "\n<h3>Command line:</h3>"
-             + "<p>QMLPlayer [-vd \"DXVA[;FFmpeg[;CUDA]]\"] fileName</p>"
+             + "<p>QMLPlayer [-vd \"DXVA[;VAAPI[;VDA[;FFmpeg[;CUDA]]]]\"] fileName</p>"
              + "\n<h3>Shortcut:</h3>"
              + "<p>M: mute</p><p>F: fullscreen</p><p>Up/Down: volume +/-</p><p>Left/Right: Seek backward/forward
                 </p><p>Space: pause/play</p><p>Q: quite</p>"

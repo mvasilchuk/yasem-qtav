@@ -80,6 +80,7 @@ public:
         mpEditorWidget = w;
         w->setEnabled(true);
         layout()->addWidget(w);
+        w->setVisible(false);
     }
     QVariantHash getOptions() const {
         return mpEditor->exportAsHash();
@@ -162,6 +163,7 @@ DecoderConfigPage::DecoderConfigPage(QWidget *parent) :
         connect(iw, SIGNAL(enableChanged()), SLOT(videoDecoderEnableChanged()));
         connect(iw, SIGNAL(selected(DecoderItemWidget*)), SLOT(onDecSelected(DecoderItemWidget*)));
         mpDecLayout->addWidget(iw);
+        delete vd;
     }
     vb->addLayout(mpDecLayout);
     vb->addSpacerItem(new QSpacerItem(width(), 10, QSizePolicy::Ignored, QSizePolicy::Expanding));
@@ -318,7 +320,7 @@ void DecoderConfigPage::updateDecodersUi()
     QStringList all_names = idsToNames(sDecodersUi);
     //qDebug() << "updateDecodersUi " << this << " " << names << " all: " << all_names;
     int idx = 0;
-    foreach (QString name, all_names) {
+    foreach (const QString& name, all_names) {
         DecoderItemWidget * iw = 0;
         for (int i = idx; i < mDecItems.size(); ++i) {
            if (mDecItems.at(i)->name() != name)

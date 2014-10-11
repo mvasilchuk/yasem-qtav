@@ -25,6 +25,7 @@
 #include <QtAV/GraphicsItemRenderer.h>
 #include <QWidget>
 
+class QGraphicsView;
 class VideoPlayer : public QWidget
 {
     Q_OBJECT
@@ -36,13 +37,18 @@ public:
     QSize sizeHint() const { return QSize(720, 640); }
     void play(const QString& file);
 
+public slots:
+    void setOpenGL(bool o = true);
+
 private slots:
     void rotateVideo(int angle);
+    void scaleVideo(int value);
     void open();
 
 private:
     QtAV::AVPlayer mediaPlayer;
     QtAV::GraphicsItemRenderer *videoItem;
+    QGraphicsView *view;
 };
 
 #endif //QTAV_VIDEOPLAYER_H

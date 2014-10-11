@@ -23,7 +23,7 @@
 #include <QtCore/QtDebug>
 #include <QtCore/QVector>
 
-#include "QtAV/QtAV_Compat.h"
+#include "QtAV/private/AVCompat.h"
 extern "C" {
 #include <libavutil/imgutils.h>
 }
@@ -533,6 +533,8 @@ void VideoFormat::setPixelFormatFFmpeg(int format)
 
 int VideoFormat::channels() const
 {
+    if (!d->pixdesc)
+        return 0;
     return d->pixdesc->nb_components;
 }
 

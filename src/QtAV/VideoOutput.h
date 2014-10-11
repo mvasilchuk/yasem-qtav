@@ -25,7 +25,6 @@
 #include <QtCore/QObject>
 #include <QtAV/VideoRenderer.h>
 
-
 namespace QtAV {
 
 class VideoOutputPrivate;
@@ -54,8 +53,7 @@ public:
 
     VideoFormat::PixelFormat preferredPixelFormat() const;
     bool isSupported(VideoFormat::PixelFormat pixfmt) const;
-    bool open();
-    bool close();
+    QWindow* qwindow();
     QWidget* widget();
     QGraphicsItem* graphicsItem();
 
@@ -85,7 +83,6 @@ protected:
 private: //for proxy
     virtual bool onSetPreferredPixelFormat(VideoFormat::PixelFormat pixfmt);
     virtual bool onForcePreferredPixelFormat(bool force = true);
-    virtual bool onScaleInRenderer(bool q);
     virtual void onSetOutAspectRatioMode(OutAspectRatioMode mode);
     virtual void onSetOutAspectRatio(qreal ratio);
     virtual bool onSetQuality(Quality q);
@@ -93,15 +90,11 @@ private: //for proxy
     virtual bool onSetRegionOfInterest(const QRectF& roi);
     virtual QPointF onMapToFrame(const QPointF& p) const;
     virtual QPointF onMapFromFrame(const QPointF& p) const;
-    virtual void onSetOSDFilter(OSDFilter *filter);
-    virtual void onSetSubtitleFilter(Filter *filter);
 
     virtual bool onSetBrightness(qreal brightness);
     virtual bool onSetContrast(qreal contrast);
     virtual bool onSetHue(qreal hue);
     virtual bool onSetSaturation(qreal saturation);
-
-    void onSetInSize(int width, int height); //private? for internal use only, called by VideoThread.
 
     // from AVOutput
     virtual void setStatistics(Statistics* statistics); //called by friend AVPlayer
@@ -112,7 +105,6 @@ private: //for proxy
     virtual void onAttach(OutputSet *set); //add this to set
     virtual void onDetach(OutputSet *set = 0); //detatch from (all, if 0) output set(s)
     virtual bool onHanlePendingTasks();
-
 };
 
 } //namespace QtAV

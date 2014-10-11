@@ -2,7 +2,8 @@
 # Add more folders to ship with the application, here
 folder_01.source = qml/QMLPlayer
 folder_01.target = qml
-DEPLOYMENTFOLDERS = folder_01
+#will copy to target path
+#DEPLOYMENTFOLDERS = folder_01
 
 # Additional import path used to resolve QML modules in Creator's code model
 QML_IMPORT_PATH =
@@ -19,7 +20,11 @@ RESOURCES += \
 SOURCES += main.cpp
 
 # Installation path
-# target.path =
+target.path = $$[QT_INSTALL_BINS]
+
+
+desktopfile.files = $$PWD/../../qtc_packaging/debian_generic/QMLPlayer.desktop
+desktopfile.path = /usr/share/applications
 
 # Please do not modify the following two lines. Required for deployment.
 include(qtquick2applicationviewer/qtquick2applicationviewer.pri)
@@ -30,4 +35,10 @@ isEmpty(PROJECTROOT): PROJECTROOT = $$PWD/../..
 STATICLINK = 0
 include($${PROJECTROOT}/examples/common/libcommon.pri)
 preparePaths($$OUT_PWD/../../out)
+mac: RC_FILE = $$PROJECTROOT/src/QtAV.icns
 
+RC_ICONS = $$PROJECTROOT/src/QtAV.ico
+QMAKE_TARGET_COMPANY = "Shanghai University->S3 Graphics | wbsecg1@gmail.com"
+QMAKE_TARGET_DESCRIPTION = "Multimedia playback framework based on Qt & FFmpeg. https://github.com/wang-bin/QtAV"
+QMAKE_TARGET_COPYRIGHT = "Copyright (C) 2012-2014 WangBin, wbsecg1@gmail.com"
+QMAKE_TARGET_PRODUCT = "QtAV QMLlayer"

@@ -31,6 +31,7 @@ class AVPlayer;
 class AVClock;
 class VideoRenderer;
 class LibAVFilter;
+class SubtitleFilter;
 }
 class QMenu;
 class QTimeEdit;
@@ -45,6 +46,8 @@ class PlayList;
 class DecoderConfigPage;
 class VideoEQConfigPage;
 class StatisticsView;
+class OSDFilter;
+class AVFilterSubtitle;
 class MainWindow : public QWidget
 {
     Q_OBJECT
@@ -60,6 +63,7 @@ public slots:
     void play(const QString& name);
     void openFile();
     void togglePlayPause();
+    void showNextOSD();
 
 signals:
     void ready();
@@ -117,6 +121,10 @@ private slots:
     void setup();
 
     void handleFullscreenChange();
+    void toggoleSubtitleEnabled(bool value);
+    void toggleSubtitleAutoLoad(bool value);
+    void openSubtitle();
+    void setSubtitleCharset(const QString& charSet);
 
 protected:
     virtual void closeEvent(QCloseEvent *e);
@@ -141,7 +149,7 @@ private:
     QVBoxLayout *mpPlayerLayout;
 
     QWidget *mpControl;
-    QLabel *mpCurrent, *mpDuration;
+    QLabel *mpCurrent, *mpEnd;
     QLabel *mpTitle;
     QLabel *mpSpeed;
     Slider *mpTimeSlider, *mpVolumeSlider;
@@ -179,6 +187,9 @@ private:
 
     QPointF mGlobalMouse;
     StatisticsView *mpStatisticsView;
+
+    OSDFilter *mpOSD;
+    QtAV::SubtitleFilter *mpSubtitle;
 };
 
 

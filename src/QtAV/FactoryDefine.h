@@ -32,7 +32,7 @@
  *      #include "FactoryDefine.h"
  *      FACTORY_DECLARE(MyClass)
  * 2. In MyClass.cpp:
- *      #include "factory.h"
+ *      #include "QtAV/private/factory.h"
  *      FACTORY_DEFINE(MyClass)
  *
  * To create and register a new subclass MyClassSubA with it's id
@@ -44,7 +44,7 @@
  *  We define the id in MyClassTypes.cpp because MyClassSubA may not be compiled(e.g. platform dependent features), but the id must be defined.
  * 1. create a source file MyClassSubA.cpp and implement the required members
  * 2. In MyClassSubA.cpp, add the following lines
- *      #include "prepost.h" //for PRE_FUNC_ADD()
+ *      #include "QtAV/prepost.h" //for PRE_FUNC_ADD()
  *      //we don't want to depend on MyClassTypes.h, so extern
  *      extern MyClassId MyClassId_SubA;
  *      FACTORY_REGISTER_ID_AUTO(MyClass, SubA, "SubA's name")
@@ -66,7 +66,7 @@
  *  just create MyClassSubA.cpp with the content:
  *
  *      #include "MyClass.h"
- *      #include "prepost.h" //for PRE_FUNC_ADD()
+ *      #include "QtAV/prepost.h" //for PRE_FUNC_ADD()
  *      MyClassId MyClassId_SubA = some_value; //it can be used somewhere else as "extern"
  *      FACTORY_REGISTER_ID_AUTO(MyClass, SubA, "SubA's name")
  *      void RegisterMyClassSubA_Man() //call it when you need as "extern"
@@ -96,11 +96,9 @@
 #define FACTORY_REGISTER_ID_TYPE_AUTO(BASE, ID, TYPE, NAME) \
     BASE* __create_##TYPE() { return new TYPE();} \
     static void __init_##TYPE() { \
-        printf("__init_"#TYPE" id=%d\n", ID); fflush(0); \
         FACTORY_REGISTER_ID_TYPE_MAN(BASE, ID, TYPE, NAME) \
     } \
     PRE_FUNC_ADD(__init_##TYPE)
-
 
 /*
  * This should be in header

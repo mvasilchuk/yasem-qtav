@@ -29,11 +29,6 @@
 
 #include <QtAV/AVPlayer.h>
 #include <QtAV/VideoRendererTypes.h>
-#include <QtAV/WidgetRenderer.h>
-#include <QtAV/GLWidgetRenderer.h>
-#include <QtAV/Direct2DRenderer.h>
-#include <QtAV/GDIRenderer.h>
-#include <QtAV/XVRenderer.h>
 #include "SimpleFilter.h"
 
 using namespace QtAV;
@@ -86,24 +81,22 @@ int main(int argc, char *argv[])
     }
     renderer->widget()->setWindowTitle(title);
 
-    //renderer->scaleInRenderer(false);
     renderer->setOutAspectRatioMode(VideoRenderer::VideoAspectRatio);
     renderer->widget()->resize(renderer->widget()->width(), renderer->widget()->width()*9/16);
     renderer->widget()->show();
     AVPlayer player;
     player.addVideoRenderer(renderer);
     if (textfilter) {
-        SimpleFilter *filter = new SimpleFilter();
+        SimpleFilter *filter = new SimpleFilter(renderer->widget());
         filter->setText("Filter on Renderer");
         VideoFilterContext *ctx = static_cast<VideoFilterContext*>(filter->context());
         ctx->rect = QRect(200, 150, 400, 60);
         ctx->opacity = 0.7;
         filter->enableRotate(false);
         filter->prepare();
-        filter->start();
         renderer->installFilter(filter);
 
-        filter = new SimpleFilter();
+        filter = new SimpleFilter(renderer->widget());
         filter->setText(QString());
         filter->setImage(QImage(":/images/qt-logo.png"));
         ctx = static_cast<VideoFilterContext*>(filter->context());
@@ -112,17 +105,15 @@ int main(int argc, char *argv[])
         filter->enableRotate(true);
         filter->enableWaveEffect(false);
         filter->prepare();
-        filter->start();
         renderer->installFilter(filter);
 
-        filter = new SimpleFilter();
-        filter->setText("Filter on Frame");
+        filter = new SimpleFilter(renderer->widget());
+        filter->setText("<h1 style='color:#ffff00'>HTML Filter on<span style='color:#ff0000'>Video Frame</span></h2>");
         filter->enableWaveEffect(false);
         filter->enableRotate(true);
         ctx = static_cast<VideoFilterContext*>(filter->context());
         ctx->rect = QRect(200, 100, 400, 60);
         filter->prepare();
-        filter->start();
         player.installVideoFilter(filter);
     }
     QString ao = "portaudio";

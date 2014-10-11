@@ -19,7 +19,7 @@
     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 ******************************************************************************/
 
-#include "QmlAVPlayer.h"
+#include "QmlAV/QmlAVPlayer.h"
 #include <QtAV/AVPlayer.h>
 #include <QtAV/AudioOutput.h>
 
@@ -35,7 +35,7 @@ static QStringList idsToNames(QVector<ID> ids) {
 template<typename ID, typename Factory>
 static QVector<ID> idsFromNames(const QStringList& names) {
     QVector<ID> decs;
-    foreach (QString name, names) {
+    foreach (const QString& name, names) {
         if (name.isEmpty())
             continue;
         ID id = Factory::id(name.toStdString(), false);
@@ -64,17 +64,21 @@ QmlAVPlayer::QmlAVPlayer(QObject *parent) :
   , mpPlayer(0)
   , mChannelLayout(ChannelLayoutAuto)
 {
-    mpPlayer = new AVPlayer(this); //in componentComplete()?
+}
+
+void QmlAVPlayer::classBegin()
+{
+    mpPlayer = new AVPlayer(this);
     connect(mpPlayer, SIGNAL(paused(bool)), SLOT(_q_paused(bool)));
     connect(mpPlayer, SIGNAL(started()), SLOT(_q_started()));
     connect(mpPlayer, SIGNAL(stopped()), SLOT(_q_stopped()));
     connect(mpPlayer, SIGNAL(positionChanged(qint64)), SIGNAL(positionChanged()));
 
     mVideoCodecs << "FFmpeg";
-}
 
-void QmlAVPlayer::classBegin()
-{
+    m_metaData.reset(new MediaMetaData());
+
+    emit mediaObjectChanged();
 }
 
 void QmlAVPlayer::componentComplete()
@@ -127,7 +131,7 @@ void QmlAVPlayer::setSource(const QUrl &url)
     emit sourceChanged(); //TODO: emit only when player loaded a new source
     // TODO: in componentComplete()?
     if (m_complete && (mAutoLoad || mAutoPlay)) {
-        mpPlayer->stop();
+        stop();
         //mpPlayer->load(); //QtAV internal bug: load() or play() results in reload
         if (mAutoPlay) {
             play();
@@ -161,6 +165,16 @@ void QmlAVPlayer::setAutoPlay(bool autoplay)
 
     mAutoPlay = autoplay;
     emit autoPlayChanged();
+}
+
+MediaMetaData* QmlAVPlayer::metaData() const
+{
+    return m_metaData.data();
+}
+
+QObject* QmlAVPlayer::mediaObject() const
+{
+    return mpPlayer;
 }
 
 QStringList QmlAVPlayer::videoCodecs() const
@@ -315,15 +329,11 @@ void QmlAVPlayer::setPlaybackState(PlaybackState playbackState)
         if (mpPlayer->isPaused()) {
             mpPlayer->pause(false);
         } else {
-            QVariantHash vaapi_opt;
-            // GLX in QML is not supported now
-            vaapi_opt["displayPriority"] = QStringList() << "X11" << "DRM";
-            QVariantHash opt;
-            opt["VAAPI"] = vaapi_opt;
-            mpPlayer->setOptionsForVideoCodec(opt);
             mpPlayer->setRepeat(mLoopCount - 1);
             mpPlayer->play();
             setChannelLayout(channelLayout());
+            // TODO: in load()?
+            m_metaData->setValuesFromStatistics(mpPlayer->statistics());
         }
         break;
     case PausedState:
@@ -337,17 +347,17 @@ void QmlAVPlayer::setPlaybackState(PlaybackState playbackState)
     }
 }
 
-qreal QmlAVPlayer::speed() const
+qreal QmlAVPlayer::playbackRate() const
 {
     return mpPlayer->speed();
 }
 
-void QmlAVPlayer::setSpeed(qreal s)
+void QmlAVPlayer::setPlaybackRate(qreal s)
 {
     if (mpPlayer->speed() == s)
         return;
     mpPlayer->setSpeed(s);
-    emit speedChanged();
+    emit playbackRateChanged();
 }
 
 AVPlayer* QmlAVPlayer::player()
@@ -360,7 +370,6 @@ void QmlAVPlayer::play(const QUrl &url)
     if (mSource == url)
         return;
     setSource(url);
-    setPlaybackState(StoppedState);
     play();
 }
 
@@ -401,6 +410,7 @@ void QmlAVPlayer::seekBackward()
 
 void QmlAVPlayer::_q_paused(bool p)
 {
+    qDebug("*********%s @%d", __FUNCTION__, __LINE__);
     if (p) {
         mPlaybackState = PausedState;
         emit paused();
@@ -413,6 +423,7 @@ void QmlAVPlayer::_q_paused(bool p)
 
 void QmlAVPlayer::_q_started()
 {
+    qDebug("*********%s @%d", __FUNCTION__, __LINE__);
     mPlaybackState = PlayingState;
     emit playing();
     emit playbackStateChanged();
@@ -420,6 +431,7 @@ void QmlAVPlayer::_q_started()
 
 void QmlAVPlayer::_q_stopped()
 {
+    qDebug("*********%s @%d", __FUNCTION__, __LINE__);
     mPlaybackState = StoppedState;
     emit stopped();
     emit playbackStateChanged();

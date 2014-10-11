@@ -31,7 +31,7 @@ namespace QtAV {
 
 class AVDemuxer;
 class AVThread;
-class Q_AV_EXPORT AVDemuxThread : public QThread
+class AVDemuxThread : public QThread
 {
     Q_OBJECT
 public:
@@ -49,8 +49,6 @@ public:
 public slots:
     void stop(); //TODO: remove it?
     void pause(bool p);
-private slots:
-    void notifyEnd();
 
 protected:
     virtual void run();
@@ -69,8 +67,6 @@ private:
     int audio_stream, video_stream;
     QMutex buffer_mutex;
     QWaitCondition cond, seek_cond;
-
-    int running_threads;
 };
 
 } //namespace QtAV

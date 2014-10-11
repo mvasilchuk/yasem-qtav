@@ -48,7 +48,7 @@ NAME = QtAV
 }
 eval(LIB$$upper($$NAME)_PRI_INCLUDED = 1)
 
-LIB_VERSION = 1.3.4 #0.x.y may be wrong for dll
+LIB_VERSION = 1.4.0 #0.x.y may be wrong for dll
 ios: STATICLINK=1
 isEmpty(STATICLINK): STATICLINK = 0  #1 or 0. use static lib or not
 
@@ -60,6 +60,7 @@ isEmpty(PROJECTROOT): PROJECTROOT = $$PWD/..
 include($${PROJECTROOT}/common.pri)
 preparePaths($$OUT_PWD/../out)
 CONFIG += depend_includepath #?
+mac_framework: PROJECT_TARGETNAME = $$NAME
 
 PROJECT_SRCPATH = $$PWD
 PROJECT_LIBDIR = $$qtLongName($$BUILD_DIR/lib)
@@ -84,17 +85,20 @@ DEPENDPATH *= $$PROJECT_SRCPATH
 !contains(CONFIG, $$lower($$NAME)-buildlib) {
     #The following may not need to change
     CONFIG *= link_prl
-    LIBS *= -L$$PROJECT_LIBDIR -l$$qtLibName($$NAME)
-	isEqual(STATICLINK, 1) {
-		PRE_TARGETDEPS += $$PROJECT_LIBDIR/$$qtStaticLib($$NAME)
-	} else {
-		win32 {
-			PRE_TARGETDEPS *= $$PROJECT_LIBDIR/$$qtSharedLib($$NAME, $$LIB_VERSION)
-		} else {
-			PRE_TARGETDEPS *= $$PROJECT_LIBDIR/$$qtSharedLib($$NAME)
-
-		}
-	}
+    mac_framework {
+      LIBS += -F$$PROJECT_LIBDIR -framework $$PROJECT_TARGETNAME
+    } else {
+      LIBS *= -L$$PROJECT_LIBDIR -l$$qtLibName($$NAME)
+      isEqual(STATICLINK, 1) {
+        PRE_TARGETDEPS += $$PROJECT_LIBDIR/$$qtStaticLib($$NAME)
+      } else {
+        win32 {
+          PRE_TARGETDEPS *= $$PROJECT_LIBDIR/$$qtSharedLib($$NAME, $$LIB_VERSION)
+        } else {
+            PRE_TARGETDEPS *= $$PROJECT_LIBDIR/$$qtSharedLib($$NAME)
+        }
+      }
+    }
 } else {
 	#Add your additional configuration first. e.g.
 
@@ -152,7 +156,7 @@ unix {
         QMAKE_LFLAGS_SONAME = -Wl,-install_name,$$PROJECT_LIBDIR/
         #QMAKE_LFLAGS += -Wl,-rpath,@loader_path/../,-rpath,@executable_path/../
     } else {
-        RPATHDIR = \$\$ORIGIN \$\$ORIGIN/lib . /usr/local/lib
+        RPATHDIR = \$\$ORIGIN \$\$ORIGIN/lib . /usr/local/lib $$[QT_INSTALL_LIBS]
 # $$PROJECT_LIBDIR only for host == target. But QMAKE_TARGET.arch is only available on windows. QT_ARCH is bad, e.g. QT_ARCH=i386 while QMAKE_HOST.arch=i686
 # https://bugreports.qt-project.org/browse/QTBUG-30263
         isEmpty(CROSS_COMPILE): RPATHDIR *= $$PROJECT_LIBDIR

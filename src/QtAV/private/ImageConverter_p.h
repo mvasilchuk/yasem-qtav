@@ -23,13 +23,13 @@
 #ifndef QTAV_IMAGECONVERTER_P_H
 #define QTAV_IMAGECONVERTER_P_H
 
-#include <QtAV/QtAV_Compat.h>
+#include "QtAV/private/AVCompat.h"
 #include <QtCore/QByteArray>
 
 namespace QtAV {
 
 class ImageConverter;
-class Q_AV_EXPORT ImageConverterPrivate : public DPtrPrivate<ImageConverter>
+class Q_AV_PRIVATE_EXPORT ImageConverterPrivate : public DPtrPrivate<ImageConverter>
 {
 public:
     ImageConverterPrivate()

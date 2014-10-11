@@ -25,10 +25,7 @@
 #include <QtCore/QMutex>
 #include <QtCore/QMutexLocker>
 #include <QtCore/QWaitCondition>
-
-#include "QtAV/BlockingQueue.h"
-#include <QtAV/Packet.h>
-#include <QtAV/QtAV_Global.h>
+#include "QtAV/AVThread.h" //PacketQueue
 
 class QRunnable;
 namespace QtAV {
@@ -39,10 +36,9 @@ class AVDecoder;
 class AVOutput;
 class AVClock;
 class Filter;
-class FilterContext;
 class Statistics;
 class OutputSet;
-class Q_AV_EXPORT AVThreadPrivate : public DPtrPrivate<AVThread>
+class AVThreadPrivate : public DPtrPrivate<AVThread>
 {
 public:
     AVThreadPrivate():
@@ -54,7 +50,6 @@ public:
       , dec(0)
       , outputSet(0)
       , delay(0)
-      , filter_context(0)
       , statistics(0)
       , ready(false)
       , render_pts0(0)
@@ -73,7 +68,6 @@ public:
     QMutex mutex;
     QWaitCondition cond; //pause
     qreal delay;
-    FilterContext *filter_context;//TODO: use own smart ptr. QSharedPointer "=" is ugly
     QList<Filter*> filters;
     Statistics *statistics; //not obj. Statistics is unique for the player, which is in AVPlayer
     BlockingQueue<QRunnable*> tasks;

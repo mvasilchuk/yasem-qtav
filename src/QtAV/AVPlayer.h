@@ -212,6 +212,7 @@ public:
     //QHash<QByteArray, QByteArray> optionsForFilter() const;
 
 signals:
+    void sourceChanged();
     void mediaStatusChanged(QtAV::MediaStatus status); //explictly use QtAV::MediaStatus
     void error(const QtAV::AVError& e); //explictly use QtAV::AVError in connection for Qt4 syntax
     void paused(bool p);
@@ -245,18 +246,22 @@ public slots:
     void setRepeat(int max);
     /*!
      * \brief startPosition
-     *  Used to repeat from startPosition() to endPosition()
+     *  Used to repeat from startPosition() to endPosition().
+     *  You can also start to play at a given position
+     * \code
+     *     player->setStartPosition();
+     *     player->play("some video");
+     * \endcode
      *  pos < 0, equals duration()+pos
      *  pos == 0, means start at the beginning of media stream
      *  (may be not exactly equals 0, seek to demuxer.startPosition()/startTime())
-     * \return
+     *  pos > media end position: no effect
      */
     void setStartPosition(qint64 pos);
     /*!
      * \brief stopPosition
      *  pos = 0: mediaStopPosition()
      *  pos < 0: duration() + pos
-     * \return
      */
     void setStopPosition(qint64 pos);
     /*!
@@ -334,7 +339,7 @@ private:
     bool ao_enable;
     OutputSet *mpVOSet, *mpAOSet;
     QVector<VideoDecoderId> vcodec_ids;
-
+    QVector<AudioOutputId> audioout_ids;
     int mBrightness, mContrast, mSaturation;
 
     QVariantHash audio_codec_opt, video_codec_opt;

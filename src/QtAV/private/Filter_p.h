@@ -27,21 +27,32 @@
 namespace QtAV {
 
 class Filter;
-class FilterContext;
+class VideoFilterContext;
 class Statistics;
-class FilterPrivate : public DPtrPrivate<Filter>
+class Q_AV_PRIVATE_EXPORT FilterPrivate : public DPtrPrivate<Filter>
 {
 public:
     FilterPrivate():
         enabled(true)
-      , context(0)
-      , statistics(0)
+      , owned_by_target(false)
     {}
     virtual ~FilterPrivate() {}
 
     bool enabled;
-    FilterContext *context; //used only when is necessary
-    Statistics *statistics;
+    bool owned_by_target;
+};
+
+class Q_AV_PRIVATE_EXPORT VideoFilterPrivate : public FilterPrivate
+{
+public:
+    VideoFilterPrivate() :
+        context(0)
+    {}
+    VideoFilterContext *context; //used only when is necessary
+};
+
+class Q_AV_PRIVATE_EXPORT AudioFilterPrivate : public FilterPrivate
+{
 };
 
 } //namespace QtAV

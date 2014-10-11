@@ -26,7 +26,6 @@
 #include <QGridLayout>
 #include <QtCore/QUrl>
 #include <QtAV/AudioOutput.h>
-#include <QtAV/OSDFilter.h>
 #include <QtAV/VideoRendererTypes.h>
 
 using namespace QtAV;
@@ -210,7 +209,7 @@ void VideoGroup::addRenderer()
 {
     VideoRendererId v = VideoRendererId_Widget;
     if (vid == "gl")
-        v = VideoRendererId_GLWidget;
+        v = VideoRendererId_GLWidget2;
     else if (vid == "d2d")
         v = VideoRendererId_Direct2D;
     else if (vid == "gdi")
@@ -231,9 +230,6 @@ void VideoGroup::addRenderer()
     int w = view ? view->frameGeometry().width()/c : qApp->desktop()->width()/c;
     int h = view ? view->frameGeometry().height()/r : qApp->desktop()->height()/r;
     renderer->widget()->resize(w, h);
-    if (renderer->osdFilter()) {
-        renderer->osdFilter()->setShowType(OSD::ShowNone);
-    }
     mpPlayer->addVideoRenderer(renderer);
     int i = (mRenderers.size()-1)/cols();
     int j = (mRenderers.size()-1)%cols();

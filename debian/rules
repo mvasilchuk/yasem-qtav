@@ -1,0 +1,9 @@
+#!/usr/bin/make -f
+
+DEB_BUILD_MULTIARCH ?= $(shell dpkg-architecture -qDEB_BUILD_MULTIARCH)
+
+%:
+	dh $@ --parallel
+
+override_dh_auto_configure:
+	qmake

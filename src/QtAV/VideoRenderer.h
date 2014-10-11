@@ -27,19 +27,7 @@
 #include <QtCore/QRectF>
 #include <QtAV/AVOutput.h>
 #include <QtAV/VideoFrame.h>
-/*TODO:
- *  broadcast to network
- *  background color for original aspect ratio
- *api:
- *  inSize: the converted image size
- *  outSize: the displaying frame size with out borders in renderer
- *  rendererSize: the original video size
- *  outAspectRatio:
- *  videoAspectRatio:
- *  rendererAspectRatio:
- *
- *  or videoXXX is out(display) XXX, the original XXX is videoOriginalXXX
- */
+#include <QtAV/FactoryDefine.h>
 
 /*!
  * A bridge for VideoOutput(QObject based) and video renderer backend classes
@@ -53,14 +41,16 @@ class QObject;
 class QPaintEvent;
 class QRect;
 class QWidget;
+class QWindow;
 class QGraphicsItem;
 
 namespace QtAV {
 
 typedef int VideoRendererId;
+class VideoRenderer;
+FACTORY_DECLARE(VideoRenderer)
 
 class Filter;
-class OSDFilter;
 class VideoFormat;
 class VideoRendererPrivate;
 class Q_AV_EXPORT VideoRenderer : public AVOutput
@@ -110,10 +100,6 @@ public:
     bool isPreferredPixelFormatForced() const;
     virtual bool isSupported(VideoFormat::PixelFormat pixfmt) const = 0;
 
-    //for testing performance
-    void scaleInRenderer(bool q);
-    bool scaleInRenderer() const;
-
     void setOutAspectRatioMode(OutAspectRatioMode mode);
     OutAspectRatioMode outAspectRatioMode() const;
     //If setOutAspectRatio(qreal) is used, then OutAspectRatioMode is CustomAspectRation
@@ -123,11 +109,6 @@ public:
     void setQuality(Quality q);
     Quality quality() const;
 
-    //TODO: unregister
-    virtual bool open();
-    virtual bool close();
-    //virtual QImage currentFrameImage() const = 0; //const QImage& const?
-    //TODO: resizeRenderer
     void resizeRenderer(const QSize& size);
     void resizeRenderer(int width, int height);
     QSize rendererSize() const;
@@ -167,7 +148,8 @@ public:
      *  map point in VideoFrame coordinate to VideoRenderer, with current ROI
      */
     QPointF mapFromFrame(const QPointF& p) const;
-
+    // to avoid conflicting width QWidget::window()
+    virtual QWindow* qwindow() { return 0;}
     /*!
      * \brief widget
      * \return default is 0. A QWidget subclass can return \a this
@@ -179,13 +161,6 @@ public:
      */
     virtual QGraphicsItem* graphicsItem() { return 0; }
 
-    //TODO: enable/disable = new a default for this vo engine or push back/remove from list
-    //filter: null means disable
-    //return the old filter. you may release the ptr manually
-    OSDFilter* setOSDFilter(OSDFilter *filter);
-    OSDFilter *osdFilter();
-    Filter* setSubtitleFilter(Filter *filter);
-    Filter* subtitleFilter();
     void enableDefaultEventFilter(bool e);
     bool isDefaultEventFilterEnabled() const;
 
@@ -224,7 +199,6 @@ protected:
      * If you are doing offscreen painting in other threads, pay attention to thread safe
      */
     virtual void resizeFrame(int width, int height);
-    //TODO: parameter QRect?
     virtual void handlePaintEvent(); //has default. User don't have to implement it
 
 private: //used by VideoOutput class
@@ -233,7 +207,6 @@ private: //used by VideoOutput class
      */
     virtual bool onSetPreferredPixelFormat(VideoFormat::PixelFormat pixfmt);
     virtual bool onForcePreferredPixelFormat(bool force = true);
-    virtual bool onScaleInRenderer(bool q);
     virtual void onSetOutAspectRatioMode(OutAspectRatioMode mode);
     virtual void onSetOutAspectRatio(qreal ratio);
     virtual bool onSetQuality(Quality q);
@@ -241,8 +214,6 @@ private: //used by VideoOutput class
     virtual bool onSetRegionOfInterest(const QRectF& roi);
     virtual QPointF onMapToFrame(const QPointF& p) const;
     virtual QPointF onMapFromFrame(const QPointF& p) const;
-    virtual void onSetOSDFilter(OSDFilter *filter);
-    virtual void onSetSubtitleFilter(Filter *filter);
     /*!
      * \brief onSetXX
      *  It's called when user call setXXX() with a new value. You should implement how to actually change the value, e.g. change brightness with shader.
@@ -254,16 +225,12 @@ private: //used by VideoOutput class
     virtual bool onSetContrast(qreal contrast);
     virtual bool onSetHue(qreal hue);
     virtual bool onSetSaturation(qreal saturation);
+    void updateUi();
 private:
-    friend class VideoThread;
     friend class VideoOutput;
-    //the size of image (QByteArray) that decoded
-     //has default
-    void setInSize(const QSize& s); //private? for internal use only, called by VideoThread.
-    void setInSize(int width, int height); //private? for internal use only, called by VideoThread.
-    virtual void onSetInSize(int width, int height);
-    //qreal sourceAspectRatio() const;//TODO: from AVCodecContext
-    //we don't need api like QSize sourceSize() const. you should get them from player or avinfo(not implemented)
+    //the size of decoded frame. get called in receiveFrame(). internal use only
+    void setInSize(const QSize& s);
+    void setInSize(int width, int height);
 };
 
 } //namespace QtAV

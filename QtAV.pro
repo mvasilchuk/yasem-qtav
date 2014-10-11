@@ -36,20 +36,22 @@ OTHER_FILES += \
 EssentialDepends = avutil avcodec avformat swscale
 OptionalDepends = \
     swresample \
-    avresample \
-    gl
+    avresample
+# QtOpenGL module. In Qt5 we can disable it and still have opengl support
+!no-gl:!no-widgets: OptionalDepends *= gl
 !no-avfilter: OptionalDepends *= avfilter
 ## sse2 sse4_1 may be defined in Qt5 qmodule.pri but is not included. Qt4 defines sse and sse2
 !no-sse4_1:!sse4_1: OptionalDepends *= sse4_1
 # no-xxx can set in $$PWD/user.conf
 !no-openal: OptionalDepends *= openal
 !no-portaudio: OptionalDepends *= portaudio
-!no-direct2d: OptionalDepends *= direct2d
-!no-gdiplus: OptionalDepends *= gdiplus
+!no-direct2d:!no-widgets: OptionalDepends *= direct2d
+!no-gdiplus:!no-widgets: OptionalDepends *= gdiplus
 # why win32 is false?
 !no-dxva: OptionalDepends *= dxva
+!no-libass: OptionalDepends *= libass
 unix {
-    !no-xv: OptionalDepends *= xv
+    !no-xv:!no-widgets: OptionalDepends *= xv
     !no-vaapi: OptionalDepends *= vaapi
     !no-cedarv: OptionalDepends *= libcedarv
 }
@@ -60,8 +62,8 @@ runConfigTests()
 }
 
 
-PACKAGE_VERSION = 1.3.4
+PACKAGE_VERSION = 1.4.0
 PACKAGE_NAME= QtAV
 
 include(pack.pri)
-#packageSet(1.3.4, QtAV)
+#packageSet(1.4.0, QtAV)

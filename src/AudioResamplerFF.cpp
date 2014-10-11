@@ -22,7 +22,7 @@
 
 #include "QtAV/AudioResampler.h"
 #include "QtAV/private/AudioResampler_p.h"
-#include "QtAV/QtAV_Compat.h"
+#include "QtAV/private/AVCompat.h"
 #include "QtAV/prepost.h"
 
 namespace QtAV {
@@ -60,6 +60,10 @@ public:
         }
     }
     SwrContext *context;
+    // defined in swr<1
+#ifndef SWR_CH_MAX
+#define SWR_CH_MAX 63
+#endif
     int channel_map[SWR_CH_MAX];
 };
 

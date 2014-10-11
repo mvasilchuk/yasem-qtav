@@ -2,7 +2,6 @@ TEMPLATE = lib
 CONFIG += qt plugin
 TARGET = QmlAV
 QT += quick qml
-
 CONFIG *= qmlav-buildlib
 
 #var with '_' can not pass to pri?
@@ -16,25 +15,26 @@ preparePaths($$OUT_PWD/../out)
 RESOURCES += 
 
 QML_FILES = $$PWD/Video.qml
-# TODO: why add more files e.g. qmldir cause make error?
+
+qtav_qml.files = $$PWD/qmldir $$PWD/Video.qml $$PWD/plugins.qmltypes
 !ios: plugin.files = $$DESTDIR/$$qtSharedLib($$NAME)
-plugin.path = $$BUILD_DIR/bin/QtAV/ #TODO: Qt install dir
+plugin.path = $$BUILD_DIR/bin/QtAV/
+mkpath($$plugin.path)
 #plugin.depends = #makefile target
 #windows: copy /y file1+file2+... dir. need '+'
 for(f, plugin.files) {
-  #plugin.commands += $$quote(-\$\(COPY_FILE\) $$shell_path($$f) $$shell_path($$plugin.path))
-  #plugin.commands += $$quote(-\$\(COPY_FILE\) $$shell_path($$f) $$shell_path($$[QT_INSTALL_QML]/QtAV))
+  plugin.commands += $$escape_expand(\\n\\t)$$quote(-\$\(COPY_FILE\) $$shell_path($$f) $$shell_path($$plugin.path))
 }
 #join values seperated by space. so quote is needed
-plugin.commands = $$join(plugin.commands,$$escape_expand(\\n\\t))
-OTHER_FILES += qmldir Video.qml plugins.qmltypes
+#plugin.commands = $$join(plugin.commands,$$escape_expand(\\n\\t))
+OTHER_FILES += $$qtav_qml.files
 #just append as a string to $$QMAKE_POST_LINK
 isEmpty(QMAKE_POST_LINK): QMAKE_POST_LINK = $$plugin.commands
 else: QMAKE_POST_LINK = $${QMAKE_POST_LINK}$$escape_expand(\\n\\t)$$plugin.commands
 
-QMAKE_EXTRA_TARGETS = plugin
+#QMAKE_EXTRA_TARGETS = plugin
+
 #POST_TARGETDEPS = plugin #vs, xcode does not support
-#mkpath($$plugin.path)
 #no write permision. do it in makefile
 #mkpath($$[QT_INSTALL_QML]/QtAV)
 
@@ -43,33 +43,21 @@ QMAKE_EXTRA_TARGETS = plugin
 #custom compiler: auto update if source is newer
 extra_copy.output = $$shell_path($$plugin.path)${QMAKE_FILE_BASE}${QMAKE_FILE_EXT}
 # QMAKE_COPY_FILE, QMAKE_MKDIR_CMD ?
-extra_copy.commands = -\$\(MKDIR\) $$shell_path($$plugin.path)
-extra_copy.commands += $$escape_expand(\\n\\t)-\$\(COPY_FILE\) ${QMAKE_FILE_NAME} $$shell_path($$plugin.path)
-#extra_copy.commands += $$escape_expand(\\n\\t)-\$\(MKDIR\) $$shell_path($$[QT_INSTALL_QML]/QtAV)
-#extra_copy.commands += $$escape_expand(\\n\\t)-\$\(COPY_FILE\) ${QMAKE_FILE_NAME} $$shell_path($$[QT_INSTALL_QML]/QtAV)
+extra_copy.commands = -\$\(COPY_FILE\) ${QMAKE_FILE_NAME} $$shell_path($$plugin.path)
 #extra_copy.depends = $$EXTRA_COPY_FILES #.input is already the depends
 extra_copy.input = EXTRA_COPY_FILES
 extra_copy.CONFIG += no_link
 extra_copy.variable_out = POST_TARGETDEPS
-QMAKE_EXTRA_COMPILERS += extra_copy
+QMAKE_EXTRA_COMPILERS += extra_copy #
 # CAN NOT put $$TARGET here otherwise may result in circular dependency.
 # update EXTRA_COPY_FILES will result in target relink
-EXTRA_COPY_FILES = qmldir Video.qml plugins.qmltypes
+EXTRA_COPY_FILES = $$qtav_qml.files
 
-win32 {
-    RC_FILE = #$${PROJECTROOT}/res/QtAV.rc
-#no depends for rc file by default, even if rc includes a header. Makefile target use '/' as default, so not works iwth win cmd
-    rc.target = $$clean_path($$RC_FILE) #rc obj depends on clean path target
-    rc.depends = ../src/QtAV/version.h
-#why use multiple rule failed? i.e. add a rule without command
-    isEmpty(QMAKE_SH) {
-        rc.commands = @copy /B $$system_path($$RC_FILE)+,, #change file time
-    } else {
-        rc.commands = @touch $$RC_FILE #change file time
-    }
-    QMAKE_EXTRA_TARGETS += rc
-}
-OTHER_FILES += $$RC_FILE
+QMAKE_WRITE_DEFAULT_RC = 1
+QMAKE_TARGET_COMPANY = "Shanghai University->S3 Graphics | wbsecg1@gmail.com"
+QMAKE_TARGET_DESCRIPTION = "Multimedia playback framework based on Qt & FFmpeg. https://github.com/wang-bin/QtAV"
+QMAKE_TARGET_COPYRIGHT = "Copyright (C) 2012-2014 WangBin, wbsecg1@gmail.com"
+QMAKE_TARGET_PRODUCT = "QtAV player"
 
 *msvc* {
 #link FFmpeg and portaudio which are built by gcc need /SAFESEH:NO
@@ -79,18 +67,41 @@ OTHER_FILES += $$RC_FILE
 #UINT64_C: C99 math features, need -D__STDC_CONSTANT_MACROS in CXXFLAGS
 DEFINES += __STDC_CONSTANT_MACROS
 
-SOURCES += QQuickItemRenderer.cpp \
+SOURCES += \
     plugin.cpp \
-    QmlAVPlayer.cpp
+    QQuickItemRenderer.cpp \
+    SGVideoNode.cpp \
+    QmlAVPlayer.cpp \
+    QuickSubtitle.cpp \
+    MediaMetaData.cpp
 
-HEADERS += QmlAV/private/QQuickItemRenderer_p.h
+HEADERS += QmlAV/private/QQuickItemRenderer_p.h \
+    QmlAV/QuickSubtitle.h
+
 SDK_HEADERS += \
     QmlAV/Export.h \
+    QmlAV/MediaMetaData.h \
+    QmlAV/SGVideoNode.h \
     QmlAV/QQuickItemRenderer.h \
     QmlAV/QmlAVPlayer.h
 
 HEADERS *= \
     $$SDK_HEADERS
 
-SDK_INCLUDE_FOLDER = QmlAV
+
+unix:!android:!mac {
+#debian
+qml_module_files = qmldir Video.qml plugins.qmltypes libQmlAV.so
+DEB_INSTALL_LIST = $$join(qml_module_files, \\n.$$[QT_INSTALL_QML]/QtAV/, .$$[QT_INSTALL_QML]/QtAV/)
+deb_install_list.target = qml-module-qtav.install
+deb_install_list.commands = echo \"$$join(DEB_INSTALL_LIST, \\n)\" >$$PROJECTROOT/debian/$${deb_install_list.target}
+QMAKE_EXTRA_TARGETS += deb_install_list
+target.depends += $${deb_install_list.target}
+}
+
+target.path = $$[QT_INSTALL_QML]/QtAV
+qtav_qml.path = $$[QT_INSTALL_QML]/QtAV
+INSTALLS += target qtav_qml
+
+MODULE = QmlAV
 include($$PROJECTROOT/deploy.pri)
