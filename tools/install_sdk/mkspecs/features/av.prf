@@ -1,0 +1,2 @@
+android: QMAKE_LFLAGS += -lOpenSLES
+!contains(QT, av): QT *= av
