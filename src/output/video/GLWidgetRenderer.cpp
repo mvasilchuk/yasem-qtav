@@ -44,6 +44,7 @@
 
 #include "QtAV/ColorTransform.h"
 #include "QtAV/FilterContext.h"
+#include "utils/Logger.h"
 
 #define UPLOAD_ROI 0
 #define ROI_TEXCOORDS 1
@@ -199,8 +200,10 @@ public:
     }
 
     void setupAspectRatio() {
-        mpv_matrix(0, 0) = (float)out_rect.width()/(float)renderer_width;
-        mpv_matrix(1, 1) = (float)out_rect.height()/(float)renderer_height;
+        mpv_matrix.setToIdentity();
+        mpv_matrix.scale((GLfloat)out_rect.width()/(GLfloat)renderer_width, (GLfloat)out_rect.height()/(GLfloat)renderer_height, 1);
+        if (orientation)
+            mpv_matrix.rotate(orientation, 0, 0, 1); // Z axis
     }
 
     class VideoMaterialType {};
@@ -861,6 +864,10 @@ void GLWidgetRenderer::drawFrame()
             0, 1,
     };
 #endif //ROI_TEXCOORDS
+    if (d.video_format.hasAlpha()) {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA , GL_ONE_MINUS_SRC_ALPHA);
+    }
 #ifndef QT_OPENGL_ES_2
     //GL_XXX may not defined in ES2. so macro is required
     if (!d.hasGLSL) {
@@ -881,6 +888,7 @@ void GLWidgetRenderer::drawFrame()
         glDisableClientState(GL_TEXTURE_COORD_ARRAY);
         glDisableClientState(GL_VERTEX_ARRAY);
         glPopMatrix();
+        glDisable(GL_BLEND);
         for (int i = 0; i < d.textures.size(); ++i) {
             d.video_frame.unmap(&d.textures[i]);
         }
@@ -963,6 +971,7 @@ void GLWidgetRenderer::drawFrame()
    d.shader_program->disableAttributeArray(d.a_TexCoords);
    d.shader_program->disableAttributeArray(d.a_Position);
 #endif
+   glDisable(GL_BLEND);
 
     for (int i = 0; i < d.textures.size(); ++i) {
         d.video_frame.unmap(&d.textures[i]);
@@ -1057,6 +1066,13 @@ void GLWidgetRenderer::onSetOutAspectRatioMode(OutAspectRatioMode mode)
 {
     Q_UNUSED(mode);
     d_func().setupAspectRatio();
+}
+
+bool GLWidgetRenderer::onSetOrientation(int value)
+{
+    Q_UNUSED(value);
+    d_func().setupAspectRatio();
+    return true;
 }
 
 bool GLWidgetRenderer::onSetBrightness(qreal b)

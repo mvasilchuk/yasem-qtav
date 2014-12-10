@@ -36,7 +36,8 @@ OTHER_FILES += \
 EssentialDepends = avutil avcodec avformat swscale
 OptionalDepends = \
     swresample \
-    avresample
+    avresample \
+    avdevice
 # QtOpenGL module. In Qt5 we can disable it and still have opengl support
 !no-gl:!no-widgets: OptionalDepends *= gl
 !no-avfilter: OptionalDepends *= avfilter
@@ -62,8 +63,8 @@ runConfigTests()
 }
 
 
-PACKAGE_VERSION = 1.4.0
+PACKAGE_VERSION = 1.4.1
 PACKAGE_NAME= QtAV
 
 include(pack.pri)
-#packageSet(1.4.0, QtAV)
+#packageSet(1.4.1, QtAV)

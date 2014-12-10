@@ -24,6 +24,7 @@
 
 #include <QtAV/QtAV_Global.h>
 #include <QtAV/CommonTypes.h>
+#include <QtAV/AVError.h>
 #include <QtCore/QVariant>
 #include <QtCore/QObject>
 #include <QtCore/QSize>
@@ -37,6 +38,7 @@ typedef QTime QElapsedTimer;
 #endif
 
 struct AVFormatContext;
+struct AVInputFormat;
 struct AVCodecContext;
 struct AVCodec;
 struct AVFrame;
@@ -48,6 +50,7 @@ class QIODevice;
 namespace QtAV {
 
 class AVError;
+class AVInput;
 class Packet;
 class QAVIOContext;
 
@@ -62,7 +65,7 @@ public:
     };
 
     enum SeekUnit {
-        SeekByTime,
+        SeekByTime, // only this is supported now
         SeekByByte,
         SeekByFrame
     };
@@ -71,16 +74,21 @@ public:
         SeekTarget_AnyFrame,
         SeekTarget_AccurateFrame
     };
+    /// Supported input protocols. A static string list
+    static const QStringList& supportedProtocols();
 
     AVDemuxer(const QString& fileName = QString(), QObject *parent = 0);
     ~AVDemuxer();
 
     MediaStatus mediaStatus() const;
     bool atEnd() const;
-    bool close();
+    bool close(); //TODO: rename unload()
     bool loadFile(const QString& fileName);
     bool isLoaded(const QString& fileName) const;
-    bool load(QIODevice* iocontext);
+    bool isLoaded(QIODevice* dev) const;
+    bool isLoaded(AVInput* in) const;
+    bool load(QIODevice* dev);
+    bool load(AVInput* in);
     bool prepareStreams(); //called by loadFile(). if change to a new stream, call it(e.g. in AVPlayer)
 
     void putFlushPacket();
@@ -156,30 +164,22 @@ public:
 
     /**
      * @brief getInterruptTimeout return the interrupt timeout
-     * @return
      */
     qint64 getInterruptTimeout() const;
-
     /**
      * @brief setInterruptTimeout set the interrupt timeout
-     * @param timeout
-     * @return
+     * @param timeout in ms
      */
     void setInterruptTimeout(qint64 timeout);
-
     /**
      * @brief getInterruptStatus return the interrupt status
-     * @return
      */
-    int getInterruptStatus() const;
-
+    bool getInterruptStatus() const;
     /**
      * @brief setInterruptStatus set the interrupt status
-     * @param interrupt
-     * @return
+     * @param interrupt true: abort current operation like loading and reading packets. false: no interrupt
      */
-    void setInterruptStatus(int interrupt);
-
+    void setInterruptStatus(bool interrupt);
     /*
      * libav's AVDictionary. we can ignore the flags used in av_dict_xxx because we can use hash api.
      * In addition, av_dict is slow.
@@ -190,6 +190,9 @@ public:
     QVariantHash options() const;
 
 signals:
+    void unloaded();
+    void userInterrupted(); //NO direct connection because it's emit before interrupted happens
+    void loaded();
     /*emit when the first frame is read*/
     void started();
     void finished(); //end of file
@@ -198,6 +201,11 @@ signals:
 
 private:
     void setMediaStatus(MediaStatus status);
+    /*!
+     * \brief handleError
+     * error code (errorCode) and message (msg) may be modified internally
+     */
+    void handleError(int averr, AVError::ErrorCode* errorCode, QString& msg);
 
     MediaStatus mCurrentMediaStatus;
     bool has_attached_pic;
@@ -224,7 +232,8 @@ private:
     AVCodecContext *a_codec_context, *v_codec_context, *s_codec_contex;
     //copy the info, not parse the file when constructed, then need member vars
     QString _file_name;
-    QAVIOContext* m_pQAVIO;
+    AVInputFormat *_iformat;
+    AVInput *m_in;
     QMutex mutex; //for seek and readFrame
     QElapsedTimer seek_timer;
 
@@ -236,6 +245,8 @@ private:
 
     AVDictionary *mpDict;
     QVariantHash mOptions;
+
+    bool m_network;
 };
 
 } //namespace QtAV

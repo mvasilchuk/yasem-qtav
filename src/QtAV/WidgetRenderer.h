@@ -23,7 +23,11 @@
 #define QTAV_WIDGETRENDERER_H
 
 #include <QtAV/QPainterRenderer.h>
-#include <qwidget.h>
+#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+#include <QtWidgets/QWidget>
+#else
+#include <QtGui/QWidget>
+#endif
 
 namespace QtAV {
 
@@ -43,12 +47,12 @@ protected:
     virtual bool needUpdateBackground() const;
     //called in paintEvent before drawFrame() when required
     virtual void drawBackground();
-    //draw the current frame using the current paint engine. called by paintEvent()
-    virtual void drawFrame();
     virtual void resizeEvent(QResizeEvent *);
     /*usually you don't need to reimplement paintEvent, just drawXXX() is ok. unless you want do all
      *things yourself totally*/
     virtual void paintEvent(QPaintEvent *);
+
+    virtual bool onSetOrientation(int value);
 protected:
     WidgetRenderer(WidgetRendererPrivate& d, QWidget *parent, Qt::WindowFlags f);
 };

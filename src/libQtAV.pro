@@ -2,6 +2,8 @@ TEMPLATE = lib
 MODULE_INCNAME = QtAV # for mac framework. also used in install_sdk.pro
 TARGET = QtAV
 QT += core gui
+config_libcedarv: CONFIG += neon #need by qt4 addSimdCompiler()
+
 greaterThan(QT_MAJOR_VERSION, 4) {
   qtHaveModule(widgets):!no_widgets {
     QT += widgets
@@ -16,7 +18,7 @@ greaterThan(QT_MAJOR_VERSION, 4) {
 }
 CONFIG *= qtav-buildlib
 INCLUDEPATH += $$[QT_INSTALL_HEADERS]
-
+#release: DEFINES += QT_NO_DEBUG_OUTPUT
 #var with '_' can not pass to pri?
 STATICLINK = 0
 PROJECTROOT = $$PWD/..
@@ -29,7 +31,7 @@ RESOURCES += QtAV.qrc \
 !rc_file {
     RC_ICONS = QtAV.ico
     QMAKE_TARGET_COMPANY = "Shanghai University->S3 Graphics | wbsecg1@gmail.com"
-    QMAKE_TARGET_DESCRIPTION = "Multimedia playback framework based on Qt & FFmpeg. https://github.com/wang-bin/QtAV"
+    QMAKE_TARGET_DESCRIPTION = "Multimedia playback framework based on Qt & FFmpeg. http://www.qtav.org"
     QMAKE_TARGET_COPYRIGHT = "Copyright (C) 2012-2014 WangBin, wbsecg1@gmail.com"
     QMAKE_TARGET_PRODUCT = "QtAV"
 } else:win32 {
@@ -90,6 +92,15 @@ LIBS += -lavcodec -lavformat -lavutil -lswscale
 exists($$PROJECTROOT/contrib/libchardet/libchardet.pri) {
   include($$PROJECTROOT/contrib/libchardet/libchardet.pri)
   DEFINES += QTAV_HAVE_CHARDET=1 BUILD_CHARDET_STATIC
+} else {
+  warning("contrib/libchardet is missing. run 'git submodule update --init' first")
+}
+exists($$PROJECTROOT/contrib/capi/capi.pri) {
+  include($$PROJECTROOT/contrib/capi/capi.pri)
+  CONFIG *= capi
+  DEFINES += QTAV_HAVE_CAPI=1 BUILD_CAPI_STATIC
+} else {
+  warning("contrib/capi is missing. run 'git submodule update --init' first")
 }
 config_avfilter {
     DEFINES += QTAV_HAVE_AVFILTER=1
@@ -104,6 +115,10 @@ config_avresample {
     DEFINES += QTAV_HAVE_AVRESAMPLE=1
     SOURCES += AudioResamplerLibav.cpp
     LIBS += -lavresample
+}
+config_avdevice {
+    DEFINES += QTAV_HAVE_AVDEVICE=1
+    LIBS += -lavdevice
 }
 config_ipp {
     DEFINES += QTAV_HAVE_IPP=1
@@ -207,9 +222,18 @@ config_vaapi* {
 }
 config_libcedarv {
     DEFINES *= QTAV_HAVE_CEDARV=1
-    QMAKE_CXXFLAGS *= -march=armv7-a -mfpu=neon 
+    QMAKE_CXXFLAGS *= -march=armv7-a
+    neon {
+      QMAKE_CXXFLAGS *= $$QMAKE_CFLAGS_NEON
+    } else {
+      DEFINES *= NO_NEON_OPT
+    }
     SOURCES += codec/video/VideoDecoderCedarv.cpp
+    CONFIG += simd #addSimdCompiler xxx_ASM
+    CONFIG += no_clang_integrated_as #see qtbase/src/gui/painting/painting.pri. add -fno-integrated-as from simd.prf
+    NEON_ASM += codec/video/tiled_yuv.S #from libvdpau-sunxi
     LIBS += -lvecore -lcedarv
+    OTHER_FILES += $$NEON_ASM
 }
 macx:!ios: CONFIG += config_vda
 config_vda {
@@ -257,19 +281,26 @@ config_openglwindow {
 }
 config_libass {
 #link against libass instead of dynamic load
-  LIBS += -lass
+  !capi {
+    LIBS += -lass
+    DEFINES += CAPI_LINK_ASS
+  }
+  HEADERS *= subtitle/ass_api.h
+  SOURCES *= subtitle/ass_api.cpp
   SOURCES *= subtitle/SubtitleProcessorLibASS.cpp
 }
+
 SOURCES += \
     AVCompat.cpp \
     QtAV_Global.cpp \
     subtitle/CharsetDetector.cpp \
     subtitle/PlainText.cpp \
+    subtitle/PlayerSubtitle.cpp \
     subtitle/Subtitle.cpp \
     subtitle/SubtitleProcessor.cpp \
     subtitle/SubtitleProcessorFFmpeg.cpp \
     utils/GPUMemCopy.cpp \
-    QAVIOContext.cpp \
+    utils/Logger.cpp \
     AudioThread.cpp \
     AVThread.cpp \
     AudioFormat.cpp \
@@ -292,10 +323,13 @@ SOURCES += \
     Packet.cpp \
     AVError.cpp \
     AVPlayer.cpp \
+    AVPlayerPrivate.cpp \
     AVClock.cpp \
     VideoCapture.cpp \
     VideoFormat.cpp \
     VideoFrame.cpp \
+    input/AVInput.cpp \
+    input/QIODeviceInput.cpp \
     output/audio/AudioOutput.cpp \
     output/audio/AudioOutputTypes.cpp \
     output/video/VideoRenderer.cpp \
@@ -310,12 +344,12 @@ SOURCES += \
     codec/video/VideoDecoderFFmpeg.cpp \
     codec/video/VideoDecoderFFmpegHW.cpp \
     VideoThread.cpp \
+    VideoFrameExtractor.cpp \
     CommonTypes.cpp
 
 SDK_HEADERS *= \
     QtAV/QtAV.h \
     QtAV/dptr.h \
-    QtAV/prepost.h \
     QtAV/QtAV_Global.h \
     QtAV/AudioResampler.h \
     QtAV/AudioResamplerTypes.h \
@@ -341,6 +375,7 @@ SDK_HEADERS *= \
     QtAV/VideoRenderer.h \
     QtAV/VideoRendererTypes.h \
     QtAV/VideoOutput.h \
+    QtAV/AVInput.h \
     QtAV/AVOutput.h \
     QtAV/AVClock.h \
     QtAV/VideoDecoder.h \
@@ -348,6 +383,7 @@ SDK_HEADERS *= \
     QtAV/VideoDecoderFFmpegHW.h \
     QtAV/VideoFormat.h \
     QtAV/VideoFrame.h \
+    QtAV/VideoFrameExtractor.h \
     QtAV/FactoryDefine.h \
     QtAV/Statistics.h \
     QtAV/Subtitle.h \
@@ -358,13 +394,15 @@ SDK_HEADERS *= \
 SDK_PRIVATE_HEADERS *= \
     QtAV/private/factory.h \
     QtAV/private/mkid.h \
+    QtAV/private/prepost.h \
     QtAV/private/singleton.h \
+    QtAV/private/PlayerSubtitle.h \
     QtAV/private/SubtitleProcessor.h \
     QtAV/private/AVCompat.h \
     QtAV/private/AudioOutput_p.h \
     QtAV/private/AudioResampler_p.h \
-    QtAV/private/AVThread_p.h \
     QtAV/private/AVDecoder_p.h \
+    QtAV/private/AVInput_p.h \
     QtAV/private/AVOutput_p.h \
     QtAV/private/Filter_p.h \
     QtAV/private/Frame_p.h \
@@ -380,20 +418,22 @@ SDK_PRIVATE_HEADERS *= \
 HEADERS *= \
     $$SDK_HEADERS \
     $$SDK_PRIVATE_HEADERS \
-    QAVIOContext.h \
+    AVPlayerPrivate.h \
+    AVDemuxThread.h \
+    AVThread.h \
+    AVThread_p.h \
+    AudioThread.h \
+    VideoThread.h \
     filter/FilterManager.h \
+    input/QIODeviceInput.h \
     subtitle/CharsetDetector.h \
     subtitle/PlainText.h \
     utils/BlockingQueue.h \
     utils/GPUMemCopy.h \
+    utils/Logger.h \
     utils/SharedPtr.h \
     output/OutputSet.h \
-    QtAV/AVDemuxThread.h \
-    QtAV/AVThread.h \
-    QtAV/AudioThread.h \
-    QtAV/VideoThread.h \
     QtAV/ColorTransform.h
-
 
 # from mkspecs/features/qt_module.prf
 # OS X and iOS frameworks
@@ -405,6 +445,10 @@ mac_framework { # from common.pri
         FRAMEWORK_HEADERS.version = Versions
         FRAMEWORK_HEADERS.files = $$SDK_HEADERS
         FRAMEWORK_HEADERS.path = Headers
+# 5.4(beta) workaround for wrong include path
+# TODO: why <QtCore/qglobal.h> can be found?
+        greaterThan(QT_MAJOR_VERSION, 4):greaterThan(QT_MINOR_VERSION, 3): FRAMEWORK_HEADERS.path = Headers/$$MODULE_INCNAME
+        FRAMEWORK_PRIVATE_HEADERS.version = Versions
         FRAMEWORK_PRIVATE_HEADERS.files = $$SDK_PRIVATE_HEADERS
         FRAMEWORK_PRIVATE_HEADERS.path = Headers/$$VERSION/$$MODULE_INCNAME/private
         QMAKE_BUNDLE_DATA += FRAMEWORK_HEADERS FRAMEWORK_PRIVATE_HEADERS
@@ -422,14 +466,14 @@ mac {
 
 unix:!android:!mac {
 #debian
-DEB_INSTALL_LIST = .$$[QT_INSTALL_LIBS]/libQtAV.so.*
+DEB_INSTALL_LIST = .$$[QT_INSTALL_LIBS]/libQt*AV.so.*
 libqtav.target = libqtav.install
 libqtav.commands = echo \"$$join(DEB_INSTALL_LIST, \\n)\" >$$PROJECTROOT/debian/$${libqtav.target}
 QMAKE_EXTRA_TARGETS += libqtav
 target.depends *= $${libqtav.target}
 
 DEB_INSTALL_LIST = $$join(SDK_HEADERS, \\n.$$[QT_INSTALL_HEADERS]/, .$$[QT_INSTALL_HEADERS]/)
-DEB_INSTALL_LIST += .$$[QT_INSTALL_LIBS]/libQtAV.prl .$$[QT_INSTALL_LIBS]/libQtAV.so
+DEB_INSTALL_LIST += .$$[QT_INSTALL_LIBS]/libQt*AV.prl .$$[QT_INSTALL_LIBS]/libQt*AV.so
 DEB_INSTALL_LIST += .$$[QT_INSTALL_BINS]/../mkspecs/features/av.prf .$$[QT_INSTALL_BINS]/../mkspecs/modules/qt_lib_av.pri
 qtav_dev.target = qtav-dev.install
 qtav_dev.commands = echo \"$$join(DEB_INSTALL_LIST, \\n)\" >$$PROJECTROOT/debian/$${qtav_dev.target}
@@ -443,11 +487,13 @@ qtav_private_dev.commands = echo \"$$join(DEB_INSTALL_LIST, \\n)\" >$$PROJECTROO
 QMAKE_EXTRA_TARGETS += qtav_private_dev
 target.depends *= $${qtav_private_dev.target}
 
-qtav_dev_links.target = qtav-dev.links
-qtav_dev_links.commands = echo \"$$[QT_INSTALL_LIBS]/libQtAV.so $$[QT_INSTALL_LIBS]/libQt$${QT_MAJOR_VERSION}AV.so\" >$$PROJECTROOT/debian/$${qtav_dev_links.target}
-QMAKE_EXTRA_TARGETS *= qtav_dev_links
-target.depends *= $${qtav_dev_links.target}
-}
+greaterThan(QT_MAJOR_VERSION, 4):lessThan(QT_MINOR_VERSION, 4) {
+  qtav_dev_links.target = qtav-dev.links
+  qtav_dev_links.commands = echo \"$$[QT_INSTALL_LIBS]/libQtAV.so $$[QT_INSTALL_LIBS]/libQt$${QT_MAJOR_VERSION}AV.so\" >$$PROJECTROOT/debian/$${qtav_dev_links.target}
+  QMAKE_EXTRA_TARGETS *= qtav_dev_links
+  target.depends *= $${qtav_dev_links.target}
+} #Qt<5.4
+} #debian
 
 MODULE_INCNAME = QtAV
 MODULE_VERSION = $$VERSION

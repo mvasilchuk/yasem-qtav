@@ -1,6 +1,6 @@
 /******************************************************************************
     QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2012-2013 Wang Bin <wbsecg1@gmail.com>
+    Copyright (C) 2013 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -18,26 +18,9 @@
     License along with this library; if not, write to the Free Software
     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 ******************************************************************************/
+#include <libavdevice/avdevice.h>
 
-#ifndef QAV_AUDIOTHREAD_H
-#define QAV_AUDIOTHREAD_H
-
-#include <QtAV/AVThread.h>
-
-namespace QtAV {
-
-class AudioDecoder;
-class AudioThreadPrivate;
-class AudioThread : public AVThread
+int main()
 {
-    Q_OBJECT
-    DPTR_DECLARE_PRIVATE(AudioThread)
-public:
-    explicit AudioThread(QObject *parent = 0);
-
-protected:
-    virtual void run();
-};
-
-} //namespace QtAV
-#endif // QAV_AUDIOTHREAD_H
+	return 0;
+}

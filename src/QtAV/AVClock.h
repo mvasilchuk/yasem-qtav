@@ -23,6 +23,7 @@
 #define QTAV_AVCLOCK_H
 
 #include <QtAV/QtAV_Global.h>
+#include <QtCore/QBasicTimer>
 #include <QtCore/QObject>
 #if QT_VERSION >= QT_VERSION_CHECK(4, 7, 0)
 #include <QtCore/QElapsedTimer>
@@ -67,7 +68,12 @@ public:
     bool isClockAuto() const;
     /*in seconds*/
     inline double pts() const;
-    inline double value() const; //the real timestamp: pts + delay
+    /*!
+     * \brief value
+     * the real timestamp in seconds: pts + delay
+     * \return
+     */
+    inline double value() const;
     inline void updateValue(double pts); //update the pts
     /*used when seeking and correcting from external*/
     void updateExternalClock(qint64 msecs);
@@ -95,9 +101,11 @@ public slots:
     void start();
     /*pause external clock*/
     void pause(bool p);
-    /*reset(stop) external clock*/
+    /*reset clock intial value and external clock parameters (and stop timer). keep speed() and isClockAuto()*/
     void reset();
 
+protected:
+    virtual void timerEvent(QTimerEvent *event);
 private:
     bool auto_clock;
     ClockType clock_type;
@@ -107,6 +115,17 @@ private:
     mutable QElapsedTimer timer;
     qreal mSpeed;
     double value0;
+    /*!
+     * \brief correction_schedule_timer
+     * accumulative error is too large using QElapsedTimer.restart() frequently.
+     * we periodically correct the pts_ value to keep the error always less
+     * than the error of calling QElapsedTimer.restart() once
+     * see github issue 46, 307 etc
+     */
+    QBasicTimer correction_schedule_timer;
+    QElapsedTimer correction_timer;
+    static const int kCorrectionInterval = 1; // 1000ms
+    double last_pts;
 };
 
 double AVClock::value() const
@@ -117,7 +136,7 @@ double AVClock::value() const
         if (timer.isValid()) {
             pts_ += double(timer.restart()) * kThousandth;
         } else {//timer is paused
-            qDebug("clock is paused. return the last value %f", pts_);
+            //qDebug("clock is paused. return the last value %f", pts_);
         }
         return pts_ * speed() + value0;
     }

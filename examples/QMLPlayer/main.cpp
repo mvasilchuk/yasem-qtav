@@ -1,4 +1,5 @@
 #include <cmath>
+#include <QtCore/QFile>
 #include <QtGui/QGuiApplication>
 #include <QQuickItem>
 #include <QtQml/QQmlEngine>
@@ -6,12 +7,24 @@
 #include <QtGui/QScreen>
 #include "qtquick2applicationviewer.h"
 #include "../common/ScreenSaver.h"
+#include "../common/common.h"
 
 int main(int argc, char *argv[])
 {
-    QGuiApplication app(argc, argv);
+    QOptions options(get_common_options());
+    options.add("QMLPlayer options")
+            ("scale", 1.0, "scale of graphics context. 0: auto")
+            ;
+    options.parse(argc, argv);
+    if (options.value("help").toBool()) {
+        options.print();
+        return 0;
+    }
 
+    QGuiApplication app(argc, argv);
+    load_qm(QStringList() << "QMLPlayer", options.value("language").toString());
     QtQuick2ApplicationViewer viewer;
+    viewer.engine()->rootContext()->setContextProperty("PlayerConfig", &Config::instance());
     qDebug(">>>>>>>>devicePixelRatio: %f", qApp->devicePixelRatio());
     QScreen *sc = app.primaryScreen();
     qDebug() << "dpi phy: " << sc->physicalDotsPerInch() << ", logical: " << sc->logicalDotsPerInch() << ", dpr: " << sc->devicePixelRatio()
@@ -25,7 +38,10 @@ int main(int argc, char *argv[])
 #else
         r = 1.0;
 #endif
-    viewer.engine()->rootContext()->setContextProperty("scaleRatio", r);
+    float sr = options.value("scale").toFloat();
+    if (qFuzzyIsNull(sr))
+        sr = r;
+    viewer.engine()->rootContext()->setContextProperty("scaleRatio", sr);
     QString qml = "qml/QMLPlayer/main.qml";
     if (QFile(qApp->applicationDirPath() + "/" + qml).exists())
         qml.prepend(qApp->applicationDirPath() + "/");
@@ -33,6 +49,21 @@ int main(int argc, char *argv[])
         qml.prepend("qrc:///");
     viewer.setMainQmlFile(qml);
     viewer.showExpanded();
+    QOption op = options.option("width");
+    if (op.isSet())
+        viewer.setWidth(op.value().toInt());
+    op = options.option("height");
+    if (op.isSet())
+        viewer.setHeight(op.value().toInt());
+    op = options.option("x");
+    if (op.isSet())
+        viewer.setX(op.value().toInt());
+    op = options.option("y");
+    if (op.isSet())
+        viewer.setY(op.value().toInt());
+    if (options.value("fullscreen").toBool())
+        viewer.showFullScreen();
+
     viewer.setTitle("QMLPlayer based on QtAV. wbsecg1@gmail.com");
     /*
      * find root item, then root.init(argv). so we can deal with argv in qml
@@ -46,10 +77,15 @@ int main(int argc, char *argv[])
     if (app.arguments().size() > 1) {
         qDebug("arguments > 1");
         QObject *player = viewer.rootObject()->findChild<QObject*>("player");
-        if (player) {
-            QString file = app.arguments().last();
+        QString file = options.value("file").toString();
+        if (file.isEmpty()) {
+            if (argc > 1 && !app.arguments().last().startsWith('-') && !app.arguments().at(argc-2).startsWith('-'))
+                file = app.arguments().last();
+        }
+        if (player && !file.isEmpty()) {
+            if (QFile(file).exists())
+                file.prepend("file:"); //qml use url and will add qrc: if no scheme
             file.replace("\\", "/"); //qurl
-            qDebug("arguments > 1, file: %s", qPrintable(file));
             QMetaObject::invokeMethod(player, "play", Q_ARG(QUrl, QUrl(file)));
         }
     }

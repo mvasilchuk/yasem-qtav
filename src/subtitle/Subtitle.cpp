@@ -22,7 +22,6 @@
 #include "QtAV/Subtitle.h"
 #include "QtAV/private/SubtitleProcessor.h"
 #include <algorithm>
-#include <QtDebug>
 #include <QtCore/QBuffer>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
@@ -36,6 +35,7 @@
 #include <QtCore/QTextStream>
 #include <QtCore/QMutexLocker>
 #include "subtitle/CharsetDetector.h"
+#include "utils/Logger.h"
 
 namespace QtAV {
 
@@ -48,6 +48,7 @@ public:
         , fuzzy_match(true)
         , update_text(true)
         , update_image(true)
+        , last_can_render(false)
         , processor(0)
         , codec("AutoDetect")
         , t(0)
@@ -90,6 +91,7 @@ public:
     bool fuzzy_match;
     bool update_text;
     bool update_image; //TODO: detect image change from engine
+    bool last_can_render;
     SubtitleProcessor *processor;
     QList<SubtitleProcessor*> processors;
     QByteArray codec;
@@ -98,6 +100,7 @@ public:
     QUrl url;
     QByteArray raw_data;
     QString file_name;
+    QStringList dirs;
     QStringList suffixes;
     QStringList supported_suffixes;
     QIODevice *dev;
@@ -152,14 +155,15 @@ void Subtitle::setEngines(const QStringList &value)
 {
     if (priv->engine_names == value)
         return;
-    priv->processor = 0;
+    // can not reset processor here, not thread safe.
     priv->supported_suffixes.clear();
     priv->engine_names = value;
-    emit enginesChanged();
-    QList<SubtitleProcessor*> sps;
     if (priv->engine_names.isEmpty()) {
+        emit enginesChanged();
+        emit supportedSuffixesChanged();
         return;
     }
+    QList<SubtitleProcessor*> sps;
     foreach (const QString& e, priv->engine_names) {
         QList<SubtitleProcessor*>::iterator it = priv->processors.begin();
         while (it != priv->processors.end()) {
@@ -184,13 +188,19 @@ void Subtitle::setEngines(const QStringList &value)
     // release the processors not wanted
     qDeleteAll(priv->processors);
     priv->processors = sps;
-    if (sps.isEmpty())
+    if (sps.isEmpty()) {
+        emit enginesChanged();
+        emit supportedSuffixesChanged();
         return;
+    }
     foreach (SubtitleProcessor* sp, sps) {
         priv->supported_suffixes.append(sp->supportedTypes());
     }
     priv->supported_suffixes.removeDuplicates();
     // DO NOT set priv->suffixes
+    emit enginesChanged();
+    emit supportedSuffixesChanged();
+    // it's safe to reload
 }
 
 QStringList Subtitle::engines() const
@@ -235,6 +245,8 @@ QByteArray Subtitle::rawData() const
     return priv->raw_data;
 }
 
+extern QString getLocalPath(const QString& fullPath);
+
 void Subtitle::setFileName(const QString &name)
 {
     if (priv->file_name == name)
@@ -242,18 +254,27 @@ void Subtitle::setFileName(const QString &name)
     priv->url.clear();
     priv->raw_data.clear();
     priv->file_name = name;
-    // FIXME: "/C:/movies/xxx" => "C:/movies/xxx"
-    if (priv->file_name.startsWith("/") && priv->file_name.contains(":")) {
-        int slash = priv->file_name.indexOf(":");
-        slash = priv->file_name.lastIndexOf("/", slash);
-        priv->file_name = priv->file_name.mid(slash+1);
-    }
+    if (priv->file_name.startsWith("file:"))
+        priv->file_name = getLocalPath(priv->file_name);
     emit fileNameChanged();
 }
 
 QString Subtitle::fileName() const
 {
     return priv->file_name;
+}
+
+void Subtitle::setDirs(const QStringList &value)
+{
+    if (priv->dirs == value)
+        return;
+    priv->dirs = value;
+    emit dirsChanged();
+}
+
+QStringList Subtitle::dirs() const
+{
+    return priv->dirs;
 }
 
 QStringList Subtitle::supportedSuffixes() const
@@ -300,32 +321,49 @@ qreal Subtitle::timestamp() const
 
 void Subtitle::load()
 {
+    SubtitleProcessor *old_processor = priv->processor;
     priv->reset();
     emit contentChanged(); //notify user to update subtitle
     // lock is not needed because it's not loaded now
     if (!priv->url.isEmpty()) {
         // need qt network module network
+        if (old_processor != priv->processor)
+            emit engineChanged();
         return;
     }
     // raw data is set, file name and url are empty
     QByteArray u8 = priv->raw_data;
     if (!u8.isEmpty()) {
         priv->loaded = priv->processRawData(u8);
+        if (priv->loaded)
+            emit loaded("");
+        checkCapability();
+        if (old_processor != priv->processor)
+            emit engineChanged();
         return;
     }
     // read from a url
-    QFile f(priv->url.toString());//QUrl::FullyDecoded));
+    QFile f(QUrl::fromPercentEncoding(priv->url.toEncoded()));
     if (f.exists()) {
         u8 = priv->readFromFile(f.fileName());
         if (u8.isEmpty())
             return;
         priv->loaded = priv->processRawData(u8);
+        if (priv->loaded)
+            emit loaded(QUrl::fromPercentEncoding(priv->url.toEncoded()));
+        checkCapability();
+        if (old_processor != priv->processor)
+            emit engineChanged();
         return;
     }
     // read from a file
     QStringList paths = priv->find();
-    if (paths.isEmpty())
+    if (paths.isEmpty()) {
+        checkCapability();
+        if (old_processor != priv->processor)
+            emit engineChanged();
         return;
+    }
     foreach (const QString& path, paths) {
         if (path.isEmpty())
             continue;
@@ -335,8 +373,20 @@ void Subtitle::load()
         if (!priv->processRawData(u8))
             continue;
         priv->loaded = true;
-        return;
+        emit loaded(path);
+        break;
     }
+    checkCapability();
+    if (old_processor != priv->processor)
+        emit engineChanged();
+}
+
+void Subtitle::checkCapability()
+{
+    if (priv->last_can_render == canRender())
+        return;
+    priv->last_can_render = canRender();
+    emit canRenderChanged();
 }
 
 void Subtitle::loadAsync()
@@ -511,7 +561,6 @@ QStringList Subtitle::Private::find()
     if (!fuzzy_match) {
         return QStringList() << file_name;
     }
-
     // found files will be sorted by extensions in sfx order
     QStringList sfx(suffixes);
     if (sfx.isEmpty())
@@ -520,20 +569,28 @@ QStringList Subtitle::Private::find()
         return QStringList() << file_name;
     QFileInfo fi(file_name);
     QString name = fi.fileName();
-    QStringList filters;
+    QString base_name = fi.completeBaseName(); // a.mp4=>a, video suffix has only 1 dot
+    QStringList filters, fileters_base;
     foreach (const QString& suf, sfx) {
         filters.append(QString("%1*.%2").arg(name).arg(suf));
+        if (name != base_name)
+            fileters_base.append(QString("%1*.%2").arg(base_name).arg(suf));
     }
-    QDir dir(fi.dir());
-    QStringList list = dir.entryList(filters, QDir::Files, QDir::Unsorted);
-    if (list.isEmpty()) {
-        filters.clear();
-        // a.mp4 => a
-        name = fi.completeBaseName(); // video suffix has only 1 dot
-        foreach (const QString& suf, sfx) {
-            filters.append(QString("%1*.%2").arg(name).arg(suf));
+    QStringList search_dirs(dirs);
+    search_dirs.prepend(fi.absolutePath());
+    QFileInfoList list;
+    foreach (const QString& d, search_dirs) {
+        QDir dir(d);
+        //qDebug() << "dir: " << dir;
+        QFileInfoList fis = dir.entryInfoList(filters, QDir::Files, QDir::Unsorted);
+        if (fis.isEmpty()) {
+            if (fileters_base.isEmpty())
+                continue;
+            fis = dir.entryInfoList(fileters_base, QDir::Files, QDir::Unsorted);
         }
-        list = dir.entryList(filters, QDir::Files, QDir::Unsorted);
+        if (fis.isEmpty())
+            continue;
+        list.append(fis);
     }
     if (list.isEmpty())
         return QStringList();
@@ -545,17 +602,17 @@ QStringList Subtitle::Private::find()
             break;
         QRegExp rx("*." + suf);
         rx.setPatternSyntax(QRegExp::Wildcard);
-        QStringList::iterator it = list.begin();
+        QFileInfoList::iterator it = list.begin();
         while (it != list.end()) {
-            if (!it->startsWith(name)) {// why it happens?
+            if (!it->fileName().startsWith(name) && !it->fileName().startsWith(base_name)) {// why it happens?
                 it = list.erase(it);
                 continue;
             }
-            if (!rx.exactMatch(*it)) {
+            if (!rx.exactMatch(it->fileName())) {
                 ++it;
                 continue;
             }
-            sorted.append(dir.absoluteFilePath(*it));
+            sorted.append(it->absoluteFilePath());
             it = list.erase(it);
         }
     }
@@ -640,7 +697,7 @@ bool Subtitle::Private::processRawData(SubtitleProcessor *sp, const QByteArray &
         qWarning() << "open subtitle qbuffer error: " << buf.errorString();
     }
     qDebug("processing subtitle from a tmp utf8 file...");
-    QString name = url.toLocalFile().section('/', -1);
+    QString name = QUrl::fromPercentEncoding(url.toEncoded()).section('/', -1);
     if (name.isEmpty())
         name = QFileInfo(file_name).fileName(); //priv->name.section('/', -1); // if no seperator?
     if (name.isEmpty())
@@ -655,6 +712,135 @@ bool Subtitle::Private::processRawData(SubtitleProcessor *sp, const QByteArray &
             return false;
     }
     return sp->process(w.fileName());
+}
+
+
+SubtitleAPIProxy::SubtitleAPIProxy(QObject* obj)
+    : m_obj(obj)
+    , m_s(0)
+{}
+
+void SubtitleAPIProxy::setSubtitle(Subtitle *sub)
+{
+    m_s = sub;
+
+    QObject::connect(m_s, SIGNAL(canRenderChanged()), m_obj, SIGNAL(canRenderChanged()));
+    QObject::connect(m_s, SIGNAL(contentChanged()), m_obj, SIGNAL(contentChanged()));
+    QObject::connect(m_s, SIGNAL(loaded(QString)), m_obj, SIGNAL(loaded(QString)));
+
+    QObject::connect(m_s, SIGNAL(codecChanged()), m_obj, SIGNAL(codecChanged()));
+    QObject::connect(m_s, SIGNAL(enginesChanged()), m_obj, SIGNAL(enginesChanged()));
+    QObject::connect(m_s, SIGNAL(engineChanged()), m_obj, SIGNAL(engineChanged()));
+//    QObject::connect(m_s, SIGNAL(fileNameChanged()), m_obj, SIGNAL(fileNameChanged()));
+    QObject::connect(m_s, SIGNAL(dirsChanged()), m_obj, SIGNAL(dirsChanged()));
+    QObject::connect(m_s, SIGNAL(fuzzyMatchChanged()), m_obj, SIGNAL(fuzzyMatchChanged()));
+    QObject::connect(m_s, SIGNAL(suffixesChanged()), m_obj, SIGNAL(suffixesChanged()));
+    QObject::connect(m_s, SIGNAL(supportedSuffixesChanged()), m_obj, SIGNAL(supportedSuffixesChanged()));
+}
+
+void SubtitleAPIProxy::setCodec(const QByteArray& value)
+{
+    if (!m_s)
+        return;
+    m_s->setCodec(value);
+}
+
+QByteArray SubtitleAPIProxy::codec() const
+{
+    if (!m_s)
+        return QByteArray();
+    return m_s->codec();
+}
+bool SubtitleAPIProxy::isLoaded() const
+{
+    return m_s && m_s->isLoaded();
+}
+
+void SubtitleAPIProxy::setEngines(const QStringList& value)
+{
+    if (!m_s)
+        return;
+    m_s->setEngines(value);
+}
+
+QStringList SubtitleAPIProxy::engines() const
+{
+    if (!m_s)
+        return QStringList();
+    return m_s->engines();
+}
+QString SubtitleAPIProxy::engine() const
+{
+    if (!m_s)
+        return QString();
+    return m_s->engine();
+}
+
+void SubtitleAPIProxy::setFuzzyMatch(bool value)
+{
+    if (!m_s)
+        return;
+    m_s->setFuzzyMatch(value);
+}
+
+bool SubtitleAPIProxy::fuzzyMatch() const
+{
+    return m_s && m_s->fuzzyMatch();
+}
+#if 0
+void SubtitleAPIProxy::setFileName(const QString& name)
+{
+    if (!m_s)
+        return;
+    m_s->setFileName(name);
+}
+
+QString SubtitleAPIProxy::fileName() const
+{
+    if (!m_s)
+        return QString();
+    return m_s->fileName();
+}
+#endif
+
+void SubtitleAPIProxy::setDirs(const QStringList &value)
+{
+    if (!m_s)
+        return;
+    m_s->setDirs(value);
+}
+
+QStringList SubtitleAPIProxy::dirs() const
+{
+    if (!m_s)
+        return QStringList();
+    return m_s->dirs();
+}
+
+QStringList SubtitleAPIProxy::supportedSuffixes() const
+{
+    if (!m_s)
+        return QStringList();
+    return m_s->supportedSuffixes();
+}
+
+void SubtitleAPIProxy::setSuffixes(const QStringList& value)
+{
+    if (!m_s)
+        return;
+    m_s->setSuffixes(value);
+}
+
+QStringList SubtitleAPIProxy::suffixes() const
+{
+    if (!m_s)
+        return QStringList();
+    return m_s->suffixes();
+}
+
+bool SubtitleAPIProxy::canRender() const
+{
+    return m_s && m_s->canRender();
 }
 
 } //namespace QtAV

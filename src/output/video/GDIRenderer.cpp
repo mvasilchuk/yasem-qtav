@@ -25,7 +25,8 @@
 #include <windows.h> //GetDC()
 #include <gdiplus.h>
 #include <QResizeEvent>
-#include "QtAV/prepost.h"
+#include "QtAV/private/prepost.h"
+#include "utils/Logger.h"
 
 #define USE_GRAPHICS 0
 

@@ -89,6 +89,9 @@ public slots:
     void pause(bool p); //processEvents when waiting?
     void nextAndPause(); //process 1 frame and pause
 
+Q_SIGNALS:
+    void frameDelivered();
+
 protected:
     AVThread(AVThreadPrivate& d, QObject *parent = 0);
     void resetState();
@@ -97,7 +100,7 @@ protected:
      * and return true. Otherwise, return false immediatly.
      */
     // has timeout so that the pending tasks can be processed
-    bool tryPause(int timeout = 100);
+    bool tryPause(unsigned long timeout = 100);
     bool processNextTask(); //in AVThread
 
     DPTR_DECLARE(AVThread)

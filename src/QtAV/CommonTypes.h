@@ -31,13 +31,13 @@ enum MediaStatus
 {
     UnknownMediaStatus,
     NoMedia,
-    LoadingMedia,
-    LoadedMedia,
-    StalledMedia,
-    BufferingMedia,
-    BufferedMedia,
+    LoadingMedia, // when source is set
+    LoadedMedia, // if auto load and source is set. player is stopped state
+    StalledMedia, // insufficient buffering or other interruptions (timeout, user interrupt)
+    BufferingMedia, // NOT IMPLEMENTED
+    BufferedMedia, // when playing //NOT IMPLEMENTED
     EndOfMedia,
-    InvalidMedia
+    InvalidMedia // what if loop > 0 or stopPosition() is not mediaStopPosition()?
 };
 
 enum SurfaceType {

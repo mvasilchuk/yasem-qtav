@@ -19,9 +19,9 @@
     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 ******************************************************************************/
 
-#include <QtAV/private/AVCompat.h>
+#include "QtAV/private/AVCompat.h"
+#include "QtAV/private/prepost.h"
 #include "QtAV/version.h"
-#include "QtAV/prepost.h"
 
 void ffmpeg_version_print()
 {
@@ -43,6 +43,9 @@ void ffmpeg_version_print()
 #if QTAV_HAVE(AVFILTER)
         { "avfilter", LIBAVFILTER_VERSION_INT, avfilter_version() },
 #endif //QTAV_HAVE(AVFILTER)
+#if QTAV_HAVE(AVDEVICE)
+        { "avdevice", LIBAVDEVICE_VERSION_INT, avdevice_version() },
+#endif //QTAV_HAVE(AVDEVICE)
         { 0, 0, 0}
     };
     for (int i = 0; components[i].lib != 0; ++i) {
@@ -65,7 +68,7 @@ void ffmpeg_version_print()
     fflush(0);
 }
 
-PRE_FUNC_ADD(ffmpeg_version_print);
+//PRE_FUNC_ADD(ffmpeg_version_print); //move to Internal::Logger
 
 #ifndef av_err2str
 
@@ -186,3 +189,83 @@ int av_samples_copy(uint8_t **dst, uint8_t * const *src, int dst_offset,
     return 0;
 }
 #endif //AV_VERSION_INT(51, 73, 101)
+
+#if QTAV_USE_LIBAV(LIBAVCODEC)
+const char *avcodec_get_name(enum AVCodecID id)
+{
+    const AVCodecDescriptor *cd;
+    AVCodec *codec;
+
+    if (id == AV_CODEC_ID_NONE)
+        return "none";
+    cd = avcodec_descriptor_get(id);
+    if (cd)
+        return cd->name;
+    av_log(NULL, AV_LOG_WARNING, "Codec 0x%x is not in the full list.\n", id);
+    codec = avcodec_find_decoder(id);
+    if (codec)
+        return codec->name;
+    codec = avcodec_find_encoder(id);
+    if (codec)
+        return codec->name;
+    return "unknown_codec";
+}
+#endif
+
+// since libav-11, ffmpeg-2.1
+#if !LIBAV_MODULE_CHECK(LIBAVCODEC, 56, 1, 0) && !FFMPEG_MODULE_CHECK(LIBAVCODEC, 55, 39, 100)
+int av_packet_copy_props(AVPacket *dst, const AVPacket *src)
+{
+    dst->pts                  = src->pts;
+    dst->dts                  = src->dts;
+    dst->pos                  = src->pos;
+    dst->duration             = src->duration;
+    dst->convergence_duration = src->convergence_duration;
+    dst->flags                = src->flags;
+    dst->stream_index         = src->stream_index;
+
+    for (int i = 0; i < src->side_data_elems; i++) {
+         enum AVPacketSideDataType type = src->side_data[i].type;
+         int size          = src->side_data[i].size;
+         uint8_t *src_data = src->side_data[i].data;
+         uint8_t *dst_data = av_packet_new_side_data(dst, type, size);
+
+        if (!dst_data) {
+            av_packet_free_side_data(dst);
+            return AVERROR(ENOMEM);
+        }
+        memcpy(dst_data, src_data, size);
+    }
+
+    return 0;
+}
+
+#endif
+// since libav-10, ffmpeg-2.1
+#if !LIBAV_MODULE_CHECK(LIBAVCODEC, 55, 34, 1) && !FFMPEG_MODULE_CHECK(LIBAVCODEC, 55, 39, 100)
+void av_packet_free_side_data(AVPacket *pkt)
+{
+    for (int i = 0; i < pkt->side_data_elems; ++i)
+        av_freep(&pkt->side_data[i].data);
+    av_freep(&pkt->side_data);
+    pkt->side_data_elems = 0;
+}
+#endif
+
+const char *get_codec_long_name(enum AVCodecID id)
+{
+    if (id == AV_CODEC_ID_NONE)
+        return "none";
+    const AVCodecDescriptor *cd = avcodec_descriptor_get(id);
+    if (cd)
+        return cd->long_name;
+    av_log(NULL, AV_LOG_WARNING, "Codec 0x%x is not in the full list.\n", id);
+    AVCodec *codec = avcodec_find_decoder(id);
+    if (codec)
+        return codec->long_name;
+    codec = avcodec_find_encoder(id);
+    if (codec)
+        return codec->long_name;
+    return "unknown_codec";
+}
+

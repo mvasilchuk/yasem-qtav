@@ -1,18 +1,16 @@
 #ifndef COMMON_H
 #define COMMON_H
 
-#include <qglobal.h>
-
-#if defined(BUILD_COMMON_LIB)
-#  undef COMMON_EXPORT
-#  define COMMON_EXPORT Q_DECL_EXPORT
-#else
-#  undef COMMON_EXPORT
-#  define COMMON_EXPORT Q_DECL_IMPORT //only for vc?
-#endif
+#include <QtCore/QStringList>
+#include "qoptions.h"
+#include "Config.h"
+#include "ScreenSaver.h"
 
 extern "C" {
 COMMON_EXPORT void _link_hack();
 }
+
+QOptions COMMON_EXPORT get_common_options();
+void COMMON_EXPORT load_qm(const QStringList& names, const QString &lang = "system");
 
 #endif // COMMON_H

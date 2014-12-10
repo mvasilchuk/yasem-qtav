@@ -1,7 +1,6 @@
 /******************************************************************************
     QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2014 Wang Bin <wbsecg1@gmail.com>
-    Copyright (C) 2014 Stefan Ladage <sladage@gmail.com>
+    Copyright (C) 2012-2013 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -20,34 +19,37 @@
     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 ******************************************************************************/
 
-#ifndef QTAV_AVIOCONTEXT_H
-#define QTAV_AVIOCONTEXT_H
 
-#include "QtAV/private/AVCompat.h"
-//struct AVIOContext; //anonymous struct in FFmpeg1.0.x
-class QIODevice;
+#ifndef QTAV_VIDEOTHREAD_H
+#define QTAV_VIDEOTHREAD_H
 
-#define IODATA_BUFFER_SIZE 32768
+#include "AVThread.h"
+#include <QtCore/QSize>
 
 namespace QtAV {
 
-class QAVIOContext
+class ImageConverter;
+class VideoCapture;
+class VideoThreadPrivate;
+class VideoThread : public AVThread
 {
+    Q_OBJECT
+    DPTR_DECLARE_PRIVATE(VideoThread)
 public:
-    QAVIOContext(QIODevice* io);
-    ~QAVIOContext();
+    explicit VideoThread(QObject *parent = 0);
+    VideoCapture *setVideoCapture(VideoCapture* cap); //ensure thread safe
+    //ImageConverter *imageConverter();
+    //virtual bool event(QEvent *event);
 
-    AVIOContext* context();
-    // call this after AVFormatContext is closed
-    void release();
+    void setBrightness(int val);
+    void setContrast(int val);
+    void setSaturation(int val);
+    void setEQ(int b, int c, int s);
 
-    QIODevice* device() const;
-    void setDevice(QIODevice* device);
-
-private:
-    QIODevice* m_pIO;
-    AVIOContext *m_avio;
+protected:
+    virtual void run();
 };
 
-}
-#endif // QTAV_AVIOCONTEXT_H
+
+} //namespace QtAV
+#endif // QTAV_VIDEOTHREAD_H

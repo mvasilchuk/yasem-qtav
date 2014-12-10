@@ -24,7 +24,7 @@
 #include <QResizeEvent>
 #include <QtCore/QLibrary>
 #include "QtAV/private/VideoRenderer_p.h"
-#include "QtAV/prepost.h"
+#include "QtAV/private/prepost.h"
 
 //#define CINTERFACE //http://rxlib.ru/faqs/faqc_en/15596.html
 //#include <windows.h>
@@ -43,6 +43,7 @@
 //performance: http://msdn.microsoft.com/en-us/library/windows/desktop/dd372260(v=vs.85).aspx
 //vlc is helpful
 //layer(opacity): http://www.cnblogs.com/graphics/archive/2013/04/15/2781969.html
+#include "utils/Logger.h"
 
 namespace QtAV {
 

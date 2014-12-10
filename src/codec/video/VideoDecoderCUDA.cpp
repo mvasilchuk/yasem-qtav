@@ -21,7 +21,7 @@
 
 #include "QtAV/VideoDecoder.h"
 #include "QtAV/private/VideoDecoder_p.h"
-#include "QtAV/prepost.h"
+#include "QtAV/private/prepost.h"
 #include <QtCore/QQueue>
 #if QTAV_HAVE(DLLAPI_CUDA)
 #include "dllapi.h"
@@ -41,6 +41,7 @@
 
 #include "cuda/helper_cuda.h"
 #include "cuda/cuda_api.h"
+#include "utils/Logger.h"
 
 //decode error if not floating context
 
@@ -77,7 +78,8 @@ public:
     virtual QString description() const;
     virtual void flush();
     virtual bool prepare();
-    virtual bool decode(const QByteArray &encoded);
+    QTAV_DEPRECATED bool decode(const QByteArray &encoded) Q_DECL_FINAL;
+    bool decode(const Packet &packet) Q_DECL_FINAL;
     virtual VideoFrame frame();
 
     // properties
@@ -289,6 +291,10 @@ public:
 VideoDecoderCUDA::VideoDecoderCUDA():
     VideoDecoder(*new VideoDecoderCUDAPrivate())
 {
+    // dynamic properties about static property details. used by UI
+    // format: detail_property
+    setProperty("detail_surfaces", tr("Decoding surfaces."));
+    setProperty("detail_flags", tr("Decoder flags"));
 }
 
 VideoDecoderCUDA::~VideoDecoderCUDA()
@@ -376,6 +382,47 @@ bool VideoDecoderCUDA::decode(const QByteArray &encoded)
     cuvid_pkt.payload_size = payload_size; //encoded.size();
     cuvid_pkt.flags = CUVID_PKT_TIMESTAMP;
     cuvid_pkt.timestamp = 0;// ?
+    //TODO: fill NALU header for h264? https://devtalk.nvidia.com/default/topic/515571/what-the-data-format-34-cuvidparsevideodata-34-can-accept-/
+    d.doParseVideoData(&cuvid_pkt);
+    if (filtered > 0) {
+        av_freep(&outBuf);
+    }
+    // callbacks are in the same thread as this. so no queue is required?
+    //qDebug("frame queue size on decode: %d", d.frame_queue.size());
+    return !d.frame_queue.isEmpty();
+    // video thread: if dec.hasFrame() keep pkt for the next loop and not decode, direct display the frame
+}
+
+bool VideoDecoderCUDA::decode(const Packet &packet)
+{
+    if (!isAvailable())
+        return false;
+    DPTR_D(VideoDecoderCUDA);
+    if (!d.parser) {
+        qWarning("CUVID parser not ready");
+        return false;
+    }
+    uint8_t *outBuf = 0;
+    int outBufSize = 0;
+    // h264_mp4toannexb_filter does not use last parameter 'keyFrame', so just set 0
+    //return: 0: not changed, no outBuf allocated. >0: ok. <0: fail
+    int filtered = av_bitstream_filter_filter(d.bitstream_filter_ctx, d.codec_ctx, NULL, &outBuf, &outBufSize
+                                              , (const uint8_t*)packet.data.constData(), packet.data.size()
+                                              , 0);//d.is_keyframe);
+    //qDebug("%s @%d filtered=%d outBuf=%p, outBufSize=%d", __FUNCTION__, __LINE__, filtered, outBuf, outBufSize);
+    if (filtered < 0) {
+        qDebug("failed to filter: %s", av_err2str(filtered));
+    }
+
+    CUVIDSOURCEDATAPACKET cuvid_pkt;
+    memset(&cuvid_pkt, 0, sizeof(CUVIDSOURCEDATAPACKET));
+    cuvid_pkt.payload = outBuf;// (unsigned char *)packet.data.constData();
+    cuvid_pkt.payload_size = outBufSize; //packet.data.size();
+    // TODO: other flags
+    if (packet.pts >= 0.0) {
+        cuvid_pkt.flags = CUVID_PKT_TIMESTAMP;
+        cuvid_pkt.timestamp = packet.pts * 1000.0; // TODO: 10MHz?
+    }
     //TODO: fill NALU header for h264? https://devtalk.nvidia.com/default/topic/515571/what-the-data-format-34-cuvidparsevideodata-34-can-accept-/
     d.doParseVideoData(&cuvid_pkt);
     if (filtered > 0) {
@@ -554,7 +601,9 @@ bool VideoDecoderCUDAPrivate::createCUVIDParser()
 {
     cudaVideoCodec cudaCodec = mapCodecFromFFmpeg(codec_ctx->codec_id);
     if (cudaCodec == -1) {
-        qWarning("CUVID does not support the codec");
+        QString es(QObject::tr("Codec %1 is not supported by CUDA").arg(avcodec_get_name(codec_ctx->codec_id)));
+        //emit error(AVError::CodecError, es);
+        qWarning() << es;
         available = false;
         return false;
     }
@@ -691,6 +740,7 @@ bool VideoDecoderCUDAPrivate::processDecodedData(CUVIDPARSERDISPINFO *cuviddisp,
         VideoFrame frame(codec_ctx->width, codec_ctx->height, VideoFormat::Format_NV12);
         frame.setBits(planes);
         frame.setBytesPerLine(pitches);
+        frame.setTimestamp((double)cuviddisp->timestamp/1000.0);
         //TODO: is clone required? may crash on clone, I should review clone()
         //frame = frame.clone();
         if (outFrame) {

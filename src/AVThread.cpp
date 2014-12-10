@@ -19,11 +19,12 @@
     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 ******************************************************************************/
 
-#include "QtAV/AVThread.h"
-#include "QtAV/private/AVThread_p.h"
+#include "AVThread.h"
+#include "AVThread_p.h"
 #include "QtAV/AVOutput.h"
 #include "QtAV/Filter.h"
 #include "output/OutputSet.h"
+#include "utils/Logger.h"
 
 namespace QtAV {
 
@@ -249,7 +250,7 @@ void AVThread::resetState()
     d.ready_cond.wakeOne();
 }
 
-bool AVThread::tryPause(int timeout)
+bool AVThread::tryPause(unsigned long timeout)
 {
     DPTR_D(AVThread);
     if (!isPaused())

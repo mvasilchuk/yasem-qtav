@@ -24,8 +24,6 @@
 
 #include <QtDebug>
 #include <QtCore/QDir>
-#include <QtCore/QLocale>
-#include <QtCore/QTranslator>
 #include <QMessageBox>
 
 #include <QtAV/AVPlayer.h>
@@ -33,6 +31,7 @@
 #include <QtAV/VideoOutput.h>
 
 #include "MainWindow.h"
+#include "../common/common.h"
 
 using namespace QtAV;
 
@@ -75,33 +74,24 @@ void Logger(QtMsgType type, const QMessageLogContext &, const QString& qmsg)
 
 int main(int argc, char *argv[])
 {
-    QApplication a(argc, argv);
-    if (a.arguments().contains("-h") || a.arguments().contains("--help")) {
-        qDebug("Usage: %s [-vo qt/gl/d2d/gdi] [url/path]filename", a.applicationFilePath().section(QDir::separator(), -1).toUtf8().constData());
-        qDebug("\n%s", aboutQtAV_PlainText().toUtf8().constData());
+    // has no effect if qInstallMessageHandler() called
+    //qSetMessagePattern("%{function} @%{line}: %{message}");
+
+    QOptions options = get_common_options();
+    options.add("player options")
+            ("-vo", "gl", "video renderer engine. can be gl, qt, d2d, gdi, xv.")
+            ("ao", "", "audio output. can be 'null'")
+            ("no-ffmpeg-log", "disable ffmpeg log")
+            ;
+    options.parse(argc, argv);
+    if (options.value("help").toBool()) {
+        qDebug() << aboutQtAV_PlainText();
+        options.print();
         return 0;
     }
 
-    QStringList qms;
-    qms << "QtAV" << "player" << "qt";
-    foreach(QString qm, qms) {
-        QTranslator *ts = new QTranslator(qApp);
-        QString path = qApp->applicationDirPath() + "/i18n/" + qm + "_" + QLocale::system().name();
-        qDebug() << "loading qm: " << path;
-        if (ts->load(path)) {
-            a.installTranslator(ts);
-        } else {
-            path = ":/i18n/" + qm + "_" + QLocale::system().name();
-            qDebug() << "loading qm: " << path;
-            if (ts->load(path))
-                a.installTranslator(ts);
-            else
-                delete ts;
-        }
-    }
-    QTranslator qtts;
-    if (qtts.load("qt_" + QLocale::system().name()))
-        a.installTranslator(&qtts);
+    QApplication a(argc, argv);
+    load_qm(QStringList() << "player", options.value("language").toString());
 
     sLogfile = fopen(QString(qApp->applicationDirPath() + "/log.txt").toUtf8().constData(), "w+");
     if (!sLogfile) {
@@ -110,14 +100,10 @@ int main(int argc, char *argv[])
     }
     qInstallMessageHandler(Logger);
 
-    QString vo;
-    int idx = a.arguments().indexOf("-vo");
-    int idxmax = idx+1;
-    if (idx > 0) {
-        vo = a.arguments().at(idx+1);
-    } else {
+    QOption op = options.option("vo");
+    QString vo = op.value().toString();
+    if (!op.isSet()) {
         QString exe(a.arguments().at(0));
-        qDebug("exe: %s", exe.toUtf8().constData());
         int i = exe.lastIndexOf('-');
         if (i > 0) {
             vo = exe.mid(i+1, exe.indexOf('.') - i - 1);
@@ -156,7 +142,6 @@ int main(int argc, char *argv[])
         QMessageBox::critical(0, "QtAV", "vo '" + vo + "' not supported");
         return 1;
     }
-    renderer->widget()->setWindowTitle(title);
     //renderer->scaleInRenderer(false);
     renderer->setOutAspectRatioMode(VideoRenderer::VideoAspectRatio);
 
@@ -164,34 +149,42 @@ int main(int argc, char *argv[])
     window.show();
     window.setWindowTitle(title);
     window.setRenderer(renderer);
-    renderer->widget()->resize(renderer->widget()->width(), renderer->widget()->width()*9/16);
-    QString ao = "portaudio";
-    idx = a.arguments().indexOf("-ao");
-    idxmax = qMax(idx+1, idxmax);
-    if (idx > 0) {
-        ao = a.arguments().at(idx+1);
+    int w = renderer->widget()->width();
+    int h = renderer->widget()->width()*9/16;
+    int x = window.x();
+    int y = window.y();
+    op = options.option("width");
+    w = op.value().toInt();
+    op = options.option("height");
+    h = op.value().toInt();
+    op = options.option("x");
+    if (op.isSet())
+        x = op.value().toInt();
+    op = options.option("y");
+    if (op.isSet())
+        y = op.value().toInt();
+    window.resize(w, h);
+    window.move(x, y);
+    if (options.value("fullscreen").toBool())
+        window.showFullScreen();
+
+    window.enableAudio(options.value("ao").toString() != "null");
+
+    op = options.option("vd");
+    if (op.isSet()) {
+        QStringList vd = op.value().toString().split(";", QString::SkipEmptyParts);
+        if (!vd.isEmpty())
+            window.setVideoDecoderNames(vd);
     }
-    ao = ao.toLower();
-    qDebug("AO>>>>>>>>>>> %s", qPrintable(ao));
-    window.enableAudio(ao != "null" && ao != "0");
 
-    QStringList vd;
-    idx = a.arguments().indexOf("-vd");
-    idxmax = qMax(idx+1, idxmax);
-    if (idx > 0) {
-        vd = a.arguments().at(idx+1).split(";", QString::SkipEmptyParts);
-    }
-    if (!vd.isEmpty())
-        window.setVideoDecoderNames(vd);
-
-
-    idx = a.arguments().indexOf("--no-ffmpeg-log");
-    idxmax = qMax(idx, idxmax);
-    if (idx < 0)
+    if (options.value("no-ffmpeg-log").toBool())
         setFFmpegLogHandler(0);
-    bool opt_has_file = argc > idxmax+1;
-    if (opt_has_file) {
-        window.play(a.arguments().last());
+    op = options.option("file");
+    if (op.isSet()) {
+        window.play(op.value().toString());
+    } else {
+        if (argc > 1 && !a.arguments().last().startsWith('-') && !a.arguments().at(argc-2).startsWith('-'))
+            window.play(a.arguments().last());
     }
     int ret = a.exec();
     return ret;

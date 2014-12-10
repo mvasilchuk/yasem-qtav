@@ -19,8 +19,8 @@
     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 ******************************************************************************/
 
-#include "QtAV/AudioThread.h"
-#include "QtAV/private/AVThread_p.h"
+#include "AudioThread.h"
+#include "AVThread_p.h"
 #include "QtAV/AudioDecoder.h"
 #include "QtAV/Packet.h"
 #include "QtAV/AudioFormat.h"
@@ -30,6 +30,8 @@
 #include "output/OutputSet.h"
 #include "QtAV/private/AVCompat.h"
 #include <QtCore/QCoreApplication>
+#include <QtCore/QDateTime>
+#include "utils/Logger.h"
 
 namespace QtAV {
 
@@ -105,12 +107,13 @@ void AudioThread::run()
              * a frame is about 20ms. sleep time must be << frame time
              */
             qreal a_v = pkt.pts - d.clock->videoPts();
-
-            //qDebug("skip audio decode at %f/%f v=%f a-v=%f", pkt.pts, d.render_pts0, d.clock->videoPts(), a_v);
-            if (a_v > 0)
-                msleep(qMin((ulong)300, ulong(a_v*1000.0)));
-            else
-                msleep(2);
+            //qDebug("skip audio decode at %f/%f v=%f a-v=%fms", pkt.pts, d.render_pts0, d.clock->videoPts(), a_v*1000.0);
+            if (a_v > 0) {
+                msleep(qMin((ulong)20, ulong(a_v*1000.0)));
+            } else {
+                // audio maybe too late compared with video packet before seeking backword. so just ignore
+                msleep(1);
+            }
             pkt = Packet(); //mark invalid to take next
             continue;
         }
@@ -158,6 +161,8 @@ void AudioThread::run()
                     || dec->resampler()->outAudioFormat() != ao->audioFormat()) {
                 //resample later to ensure thread safe. TODO: test
                 if (d.resample) {
+                    qDebug() << "ao.format " << ao->audioFormat();
+                    qDebug() << "swr.format " << dec->resampler()->outAudioFormat();
                     qDebug("decoder set speed: %.2f", ao->speed());
                     dec->resampler()->setOutAudioFormat(ao->audioFormat());
                     dec->resampler()->setSpeed(ao->speed());
@@ -191,7 +196,7 @@ void AudioThread::run()
             if (dt > 0.618 || dt < 0) {
                 dt = 0;
             }
-            //qDebug("sleep %f", dt);
+            //qDebug("a sleep %f", dt);
             //TODO: avoid acummulative error. External clock?
             msleep((unsigned long)(dt*1000.0));
             pkt = Packet();
@@ -263,6 +268,8 @@ void AudioThread::run()
                 ao->receiveData(decodedChunk, pkt.pts);
                 ao->play();
                 d.clock->updateValue(ao->timestamp());
+
+                emit frameDelivered();
             } else {
                 d.clock->updateDelay(delay += chunk_delay);
 

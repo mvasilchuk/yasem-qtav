@@ -27,8 +27,7 @@
 #include <QtAV/VideoRenderer.h>
 #include <QtQuick/QQuickItem>
 
-namespace QtAV
-{
+namespace QtAV {
 extern QMLAV_EXPORT VideoRendererId VideoRendererId_QQuickItem;
 
 class QQuickItemRendererPrivate;
@@ -40,6 +39,8 @@ class QMLAV_EXPORT QQuickItemRenderer : public QQuickItem, public VideoRenderer
     Q_PROPERTY(bool opengl READ isOpenGL WRITE setOpenGL NOTIFY openGLChanged)
     Q_PROPERTY(QObject* source READ source WRITE setSource NOTIFY sourceChanged)
     Q_PROPERTY(FillMode fillMode READ fillMode WRITE setFillMode NOTIFY fillModeChanged)
+    Q_PROPERTY(int orientation READ orientation WRITE setOrientation NOTIFY orientationChanged)
+    // regionOfInterest > sourceRect
     Q_PROPERTY(QRectF regionOfInterest READ regionOfInterest WRITE setRegionOfInterest NOTIFY regionOfInterestChanged)
     Q_ENUMS(FillMode)
 public:
@@ -65,6 +66,7 @@ public:
 Q_SIGNALS:
     void sourceChanged();
     void fillModeChanged(QQuickItemRenderer::FillMode);
+    void orientationChanged();
     void regionOfInterestChanged();
     void openGLChanged();
 
@@ -81,9 +83,10 @@ protected:
     virtual QSGNode *updatePaintNode(QSGNode *node, UpdatePaintNodeData *data);
 private:
     virtual bool onSetRegionOfInterest(const QRectF& roi);
-
+    virtual bool onSetOrientation(int value);
 };
 typedef QQuickItemRenderer VideoRendererQQuickItem;
 }
+QML_DECLARE_TYPE(QtAV::QQuickItemRenderer)
 
 #endif // QTAV_QML_QQUICKRENDERER_H

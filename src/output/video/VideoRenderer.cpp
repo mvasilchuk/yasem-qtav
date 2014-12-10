@@ -23,6 +23,14 @@
 #include <QtAV/private/VideoRenderer_p.h>
 #include <QtAV/Filter.h>
 #include <QtCore/QCoreApplication>
+
+// TODO: move to an internal header
+#if QT_VERSION < QT_VERSION_CHECK(5, 0, 0) || defined(QT_WIDGETS_LIB)
+#ifndef QTAV_HAVE_WIDGETS
+#define QTAV_HAVE_WIDGETS 1
+#endif //QTAV_HAVE_WIDGETS
+#endif
+
 #if QTAV_HAVE(WIDGETS)
 #include <QWidget>
 #include <QGraphicsItem>
@@ -30,6 +38,7 @@
 #if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
 #include <QtGui/QWindow>
 #endif
+#include "utils/Logger.h"
 
 namespace QtAV {
 
@@ -256,6 +265,38 @@ int VideoRenderer::rendererHeight() const
     return d_func().renderer_height;
 }
 
+void VideoRenderer::setOrientation(int value)
+{
+    // currently only supports a multiple of 90
+    value = (value + 360) % 360;
+    if (value % 90)
+        return;
+    DPTR_D(VideoRenderer);
+    if (d.orientation == value)
+        return;
+    int old = orientation();
+    d.orientation = value;
+    if (!onSetOrientation(value)) {
+        d.orientation = old;
+    } else {
+        d.computeOutParameters(d.out_aspect_ratio);
+        onSetOutAspectRatio(outAspectRatio());
+        resizeFrame(d.out_rect.width(), d.out_rect.height());
+    }
+}
+
+int VideoRenderer::orientation() const
+{
+    return d_func().orientation;
+}
+
+// only qpainter and opengl based renderers support orientation.
+bool VideoRenderer::onSetOrientation(int value)
+{
+    Q_UNUSED(value);
+    return false;
+}
+
 QSize VideoRenderer::frameSize() const
 {
     DPTR_D(const VideoRenderer);
@@ -357,6 +398,7 @@ QPointF VideoRenderer::mapToFrame(const QPointF &p) const
     return onMapToFrame(p);
 }
 
+// TODO: orientation
 QPointF VideoRenderer::onMapToFrame(const QPointF &p) const
 {
     QRectF roi = realROI();
@@ -579,7 +621,8 @@ void VideoRenderer::updateUi()
     // TODO: qwindow() and widget() can both use event?
 #if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
     if (qwindow()) {
-        qApp->postEvent(qwindow(), new QEvent(QEvent::UpdateRequest));
+        // DO NOT use qApp macro inside QtAV because QtAV may not depend QtWidgets module
+        QCoreApplication::instance()->postEvent(qwindow(), new QEvent(QEvent::UpdateRequest));
     }
 #endif
 #if QTAV_HAVE(WIDGETS)

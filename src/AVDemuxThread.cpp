@@ -19,13 +19,16 @@
     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 ******************************************************************************/
 
-#include <QtAV/AVDemuxThread.h>
-#include <QtAV/AVDemuxer.h>
-#include <QtAV/AVDecoder.h>
-#include <QtAV/Packet.h>
-#include <QtAV/AVThread.h>
+#include "AVDemuxThread.h"
+#include "QtAV/AVDemuxer.h"
+#include "QtAV/AVDecoder.h"
+#include "QtAV/Packet.h"
+#include "AVThread.h"
 #include <QtCore/QTimer>
 #include <QtCore/QEventLoop>
+#include "utils/Logger.h"
+
+#define RESUME_ONCE_ON_SEEK 0
 
 namespace QtAV {
 
@@ -54,17 +57,29 @@ private:
 };
 
 AVDemuxThread::AVDemuxThread(QObject *parent) :
-    QThread(parent),paused(false),seeking(false),end(true)
-    ,demuxer(0)
-    ,audio_thread(0),video_thread(0)
+    QThread(parent)
+  , paused(false)
+  , user_paused(false)
+  , end(true)
+  , demuxer(0)
+  , audio_thread(0)
+  , video_thread(0)
+  , nb_next_frame(0)
 {
+    seek_tasks.setCapacity(1);
+    seek_tasks.blockFull(false);
 }
 
 AVDemuxThread::AVDemuxThread(AVDemuxer *dmx, QObject *parent) :
-    QThread(parent),paused(false),seeking(false),end(true)
-    ,audio_thread(0),video_thread(0)
+    QThread(parent)
+  , paused(false)
+  , end(true)
+  , audio_thread(0)
+  , video_thread(0)
 {
     setDemuxer(dmx);
+    seek_tasks.setCapacity(1);
+    seek_tasks.blockFull(false);
 }
 
 void AVDemuxThread::setDemuxer(AVDemuxer *dmx)
@@ -108,9 +123,8 @@ AVThread* AVDemuxThread::audioThread()
 
 void AVDemuxThread::seek(qint64 pos)
 {
-    qDebug("demux thread start to seek...");
-    seeking = true;
     end = false;
+    // queue maybe blocked by put()
     if (audio_thread) {
         audio_thread->setDemuxEnded(false);
         audio_thread->packetQueue()->clear();
@@ -119,6 +133,33 @@ void AVDemuxThread::seek(qint64 pos)
         video_thread->setDemuxEnded(false);
         video_thread->packetQueue()->clear();
     }
+    class SeekTask : public QRunnable {
+    public:
+        SeekTask(AVDemuxThread *dt, qint64 t)
+            : demux_thread(dt)
+            , position(t)
+        {}
+        void run() {
+            demux_thread->seekInternal(position);
+        }
+    private:
+        AVDemuxThread *demux_thread;
+        qint64 position;
+    };
+    newSeekRequest(new SeekTask(this, pos));
+}
+
+void AVDemuxThread::seekInternal(qint64 pos)
+{
+    if (audio_thread) {
+        audio_thread->setDemuxEnded(false);
+        audio_thread->packetQueue()->clear();
+    }
+    if (video_thread) {
+        video_thread->setDemuxEnded(false);
+        video_thread->packetQueue()->clear();
+    }
+    qDebug("seek to %lld ms (%f%%)", pos, double(pos)/double(demuxer->duration())*100.0);
     demuxer->seek(pos);
     // TODO: why queue may not empty?
     if (audio_thread) {
@@ -127,26 +168,61 @@ void AVDemuxThread::seek(qint64 pos)
     }
     if (video_thread) {
         video_thread->packetQueue()->clear();
+        // TODO: the first frame (key frame) will not be decoded correctly if flush() is called.
         video_thread->packetQueue()->put(Packet());
     }
     //if (subtitle_thread) {
     //     subtitle_thread->packetQueue()->clear();
     //    subtitle_thread->packetQueue()->put(Packet());
     //}
-    seeking = false;
-    seek_cond.wakeAll();
-    if (isPaused()) {
-        pause(false);
-        AVThread *avthread = video_thread;
-        if (!avthread)
-            avthread = audio_thread;
-        avthread->pause(false);
-        QEventLoop loop;
-        QTimer::singleShot(40, &loop, SLOT(quit()));
-        loop.exec();
-        pause(true);
-        avthread->pause(true);
+
+    if (isPaused() && (video_thread || audio_thread)) {
+        AVThread *thread = video_thread ? video_thread : audio_thread;
+        thread->pause(false);
+        pauseInternal(false);
+        emit requestClockPause(false); // need direct connection
+        // direct connection is fine here
+        connect(thread, SIGNAL(frameDelivered()), this, SLOT(frameDeliveredSeekOnPause()), Qt::DirectConnection);
     }
+}
+
+void AVDemuxThread::newSeekRequest(QRunnable *r)
+{
+    if (seek_tasks.size() >= seek_tasks.capacity()) {
+        QRunnable *r = seek_tasks.take();
+        if (r->autoDelete())
+            delete r;
+    }
+    seek_tasks.put(r);
+}
+
+void AVDemuxThread::processNextSeekTask()
+{
+    if (seek_tasks.isEmpty())
+        return;
+    QRunnable *task = seek_tasks.take();
+    if (!task)
+        return;
+    task->run();
+    if (task->autoDelete())
+        delete task;
+}
+
+void AVDemuxThread::pauseInternal(bool value)
+{
+    paused = value;
+}
+
+void AVDemuxThread::processNextPauseTask()
+{
+    if (pause_tasks.isEmpty())
+        return;
+    QRunnable *task = pause_tasks.dequeue();
+    if (!task)
+        return;
+    task->run();
+    if (task->autoDelete())
+        delete task;
 }
 
 bool AVDemuxThread::isPaused() const
@@ -162,9 +238,6 @@ bool AVDemuxThread::isEnd() const
 //No more data to put. So stop blocking the queue to take the reset elements
 void AVDemuxThread::stop()
 {
-
-    qDebug("void AVDemuxThread::stop()");
-
     //this will not affect the pause state if we pause the output
     //TODO: why remove blockFull(false) can not play another file?
     if (audio_thread) {
@@ -188,7 +261,6 @@ void AVDemuxThread::stop()
         }
     }
     pause(false);
-    seek_cond.wakeAll();
     cond.wakeAll();
     qDebug("all avthread finished. try to exit demux thread<<<<<<");
     end = true;
@@ -196,12 +268,76 @@ void AVDemuxThread::stop()
 
 void AVDemuxThread::pause(bool p)
 {
-    qDebug("demux thread pause %d", p);
     if (paused == p)
         return;
     paused = p;
+    user_paused = paused;
     if (!paused)
         cond.wakeAll();
+}
+
+void AVDemuxThread::nextFrame()
+{
+    pause(true); // must pause AVDemuxThread (set user_paused true)
+    AVThread *t = video_thread;
+    bool connected = false;
+    if (t) {
+        t->pause(false);
+        t->packetQueue()->blockFull(false);
+        if (!connected) {
+            connect(t, SIGNAL(frameDelivered()), this, SLOT(frameDeliveredNextFrame()), Qt::DirectConnection);
+            connected = true;
+        }
+    }
+    t = audio_thread;
+    if (t) {
+        t->pause(false);
+        t->packetQueue()->blockFull(false);
+        if (!connected) {
+            connect(t, SIGNAL(frameDelivered()), this, SLOT(frameDeliveredNextFrame()), Qt::DirectConnection);
+            connected = true;
+        }
+    }
+    emit requestClockPause(false);
+    nb_next_frame.ref();
+    pauseInternal(false);
+}
+
+void AVDemuxThread::frameDeliveredSeekOnPause()
+{
+    AVThread *thread = video_thread ? video_thread : audio_thread;
+    Q_ASSERT(thread);
+    disconnect(thread, SIGNAL(frameDelivered()), this, SLOT(frameDeliveredSeekOnPause()));
+    if (user_paused) {
+        pause(true); // restore pause state
+        emit requestClockPause(true); // need direct connection
+    // pause video/audio thread
+        thread->pause(true);
+    }
+}
+
+void AVDemuxThread::frameDeliveredNextFrame()
+{
+    AVThread *thread = video_thread ? video_thread : audio_thread;
+    Q_ASSERT(thread);
+    if (nb_next_frame.deref()) {
+#if QT_VERSION < QT_VERSION_CHECK(5, 0, 0) || QT_VERSION >= QT_VERSION_CHECK(5, 3, 0)
+        Q_ASSERT_X((int)nb_next_frame > 0, "frameDeliveredNextFrame", "internal error. frameDeliveredNextFrame must be > 0");
+#else
+        Q_ASSERT_X((int)nb_next_frame.load() > 0, "frameDeliveredNextFrame", "internal error. frameDeliveredNextFrame must be > 0");
+#endif
+        return;
+    }
+    disconnect(thread, SIGNAL(frameDelivered()), this, SLOT(frameDeliveredNextFrame()));
+    if (user_paused) {
+        pause(true); // restore pause state
+        emit requestClockPause(true); // need direct connection
+    // pause both video and audio thread
+        if (video_thread)
+            video_thread->pause(true);
+        if (audio_thread)
+            audio_thread->pause(true);
+    }
 }
 
 void AVDemuxThread::run()
@@ -236,8 +372,10 @@ void AVDemuxThread::run()
         vqueue->setBlocking(true);
     }
     while (!end) {
-        if (tryPause())
+        processNextSeekTask();
+        if (tryPause()) {
             continue; //the queue is empty and will block
+        }
         running_threads = (audio_thread && audio_thread->isRunning()) + (video_thread && video_thread->isRunning());
         if (!running_threads) {
             qDebug("no running avthreads. exit demuxer thread");
@@ -247,12 +385,6 @@ void AVDemuxThread::run()
         Q_UNUSED(locker);
         if (end) {
             break;
-        }
-        if (seeking) {
-            qDebug("Demuxer is seeking... wait for seek end");
-            if (!seek_cond.wait(&buffer_mutex, 200)) { //will return the same state(i.e. lock)
-                qWarning("seek timed out");
-            }
         }
         if (!demuxer->readFrame()) {
             continue;
@@ -293,18 +425,18 @@ void AVDemuxThread::run()
                     aqueue->clear();
                     continue;
                 }
-                if (vqueue)
-                    aqueue->blockFull(vqueue->isEnough() || demuxer->hasAttacedPicture());
+                // always block full if no vqueue because empty callback may set false
+                // attached picture is cover for song, 1 frame
+                aqueue->blockFull(!video_thread || !video_thread->isRunning() || !vqueue || (vqueue->isEnough() || demuxer->hasAttacedPicture()));
                 aqueue->put(pkt); //affect video_thread
             }
         } else if (index == video_stream) {
-            if (!video_thread || !video_thread->isRunning()) {
-                vqueue->clear();
-                continue;
-            }
             if (vqueue) {
-                if (aqueue)
-                    vqueue->blockFull(aqueue->isEnough());
+                if (!video_thread || !video_thread->isRunning()) {
+                    vqueue->clear();
+                    continue;
+                }
+                vqueue->blockFull(!audio_thread || !audio_thread->isRunning() || !aqueue || aqueue->isEnough());
                 vqueue->put(pkt); //affect audio_thread
             }
         } else { //subtitle
@@ -327,13 +459,13 @@ void AVDemuxThread::run()
     qDebug("Demux thread stops running....");
 }
 
-bool AVDemuxThread::tryPause()
+bool AVDemuxThread::tryPause(unsigned long timeout)
 {
     if (!paused)
         return false;
     QMutexLocker lock(&buffer_mutex);
     Q_UNUSED(lock);
-    cond.wait(&buffer_mutex);
+    cond.wait(&buffer_mutex, timeout);
     return true;
 }
 

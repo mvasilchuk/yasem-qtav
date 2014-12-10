@@ -26,7 +26,9 @@
 #include <cmath>
 #include <QtCore/QCoreApplication>
 #include <QtCore/QFile>
+#include "utils/Logger.h"
 
+#define YUVA_DONE 0
 /*
  * TODO: glActiveTexture for Qt4
  * texture target (rectangle for VDA)
@@ -50,8 +52,18 @@ int TexturedGeometry::mode() const
 
 void TexturedGeometry::setPoint(int index, const QPointF &p, const QPointF &tp)
 {
+    setGeometryPoint(index, p);
+    setTexturePoint(index, tp);
+}
+
+void TexturedGeometry::setGeometryPoint(int index, const QPointF &p)
+{
     v[index].x = p.x();
     v[index].y = p.y();
+}
+
+void TexturedGeometry::setTexturePoint(int index, const QPointF &tp)
+{
     v[index].tx = tp.x();
     v[index].ty = tp.y();
 }
@@ -126,6 +138,11 @@ const char* VideoShader::fragmentShader() const
         qWarning("Empty fragment shader!");
         return 0;
     }
+#if YUVA_DONE
+    if (d.video_format.planeCount() == 4) {
+        frag.prepend("#define PLANE_4\n");
+    }
+#endif
     if (d.video_format.isPlanar() && d.video_format.bytesPerPixel(0) == 2) {
         if (d.video_format.isBigEndian())
             frag.prepend("#define LA_16BITS_BE\n");
@@ -247,7 +264,8 @@ bool VideoShader::update(VideoMaterial *material)
     }
     //qDebug() << "color mat " << material->colorMatrix();
     program()->setUniformValue(colorMatrixLocation(), material->colorMatrix());
-    program()->setUniformValue(bppLocation(), (GLfloat)material->bpp());
+    if (bppLocation() >= 0)
+        program()->setUniformValue(bppLocation(), (GLfloat)material->bpp());
     //program()->setUniformValue(matrixLocation(), material->matrix()); //what about sgnode? state.combindMatrix()?
     // uniform end. attribute begins
     return true;
@@ -309,10 +327,10 @@ void VideoMaterial::setCurrentFrame(const VideoFrame &frame)
     DPTR_D(VideoMaterial);
     d.update_texure = true;
     // TODO: move to another function before rendering?
-    d.bpp = frame.format().bitsPerPixel(0);
     d.width = frame.width();
     d.height = frame.height();
     const VideoFormat fmt(frame.format());
+    d.bpp = fmt.bitsPerPixel(0);
     // http://forum.doom9.org/archive/index.php/t-160211.html
     ColorTransform::ColorSpace cs = ColorTransform::RGB;
     if (fmt.isRGB()) {
@@ -342,8 +360,7 @@ VideoShader* VideoMaterial::createShader() const
 {
     DPTR_D(const VideoMaterial);
     VideoShader *shader = new VideoShader();
-    const VideoFormat fmt(d.frame.format());
-    shader->setVideoFormat(fmt);
+    shader->setVideoFormat(d.video_format);
     //resize texture locations to avoid access format later
     return shader;
 }
@@ -355,18 +372,30 @@ MaterialType* VideoMaterial::type() const
     static MaterialType planar16leType;
     static MaterialType planar16beType;
     static MaterialType yuv8Type;
+    static MaterialType planar16le_4plane_Type;
+    static MaterialType planar16be_4plane_Type;
+    static MaterialType yuv8_4plane_Type;
+
     static MaterialType invalidType;
-    const VideoFormat &fmt = d_func().frame.format();
+    const VideoFormat &fmt = d_func().video_format;
     if (fmt.isRGB() && !fmt.isPlanar())
         return &rgbType;
     if (!fmt.isPlanar())
         return &packedType;
-    if (fmt.bytesPerPixel(0) == 1)
+    if (fmt.bytesPerPixel(0) == 1) {
+        if (fmt.planeCount() == 4)
+            return &yuv8_4plane_Type;
         return &yuv8Type;
-    if (fmt.isBigEndian())
+    }
+    if (fmt.isBigEndian()) {
+        if (fmt.planeCount() == 4)
+            return &planar16be_4plane_Type;
         return &planar16beType;
-    else
+    } else {
+        if (fmt.planeCount() == 4)
+            return &planar16le_4plane_Type;
         return &planar16leType;
+    }
     return &invalidType;
 }
 
@@ -447,6 +476,11 @@ int VideoMaterial::compare(const VideoMaterial *other) const
             return diff;
     }
     return d.bpp - other->bpp();
+}
+
+bool VideoMaterial::hasAlpha() const
+{
+    return d_func().video_format.hasAlpha();
 }
 
 void VideoMaterial::unbind()
@@ -602,6 +636,8 @@ bool VideoMaterialPrivate::initTextures(const VideoFormat& fmt)
             } else {
                 internal_format[1] = data_format[1] = GL_LUMINANCE; //vec4(L,L,L,1)
                 internal_format[2] = data_format[2] = GL_ALPHA;//GL_ALPHA;
+                if (fmt.planeCount() == 4)
+                    internal_format[3] = data_format[3] = GL_ALPHA; //GL_ALPHA
             }
         }
     }
@@ -655,7 +691,7 @@ bool VideoMaterialPrivate::initTextures(const VideoFormat& fmt)
 
 bool VideoMaterialPrivate::updateTexturesIfNeeded()
 {
-    const VideoFormat &fmt = frame.format();
+    const VideoFormat &fmt = video_format;
     if (!fmt.isValid())
         return false;
     bool update_textures = false;
@@ -664,7 +700,7 @@ bool VideoMaterialPrivate::updateTexturesIfNeeded()
             || frame.bytesPerLine(0) != plane0Size.width() || frame.height() != plane0Size.height()
             || (plane1_linesize > 0 && frame.bytesPerLine(1) != plane1_linesize)) { // no need to check height if plane 0 sizes are equal?
         update_textures = true;
-        //qDebug("---------------------update texture: %dx%d, %s", width, frame.height(), frame.format().name().toUtf8().constData());
+        //qDebug("---------------------update texture: %dx%d, %s", width, frame.height(), video_format.name().toUtf8().constData());
         const int nb_planes = fmt.planeCount();
         texture_size.resize(nb_planes);
         texture_upload_size.resize(nb_planes);

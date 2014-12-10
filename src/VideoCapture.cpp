@@ -28,6 +28,7 @@
 #include <QtCore/QRunnable>
 #include <QtCore/QThreadPool>
 #include <QtGui/QImage>
+#include "utils/Logger.h"
 
 #if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
 #include <QtGui/QDesktopServices>
@@ -42,7 +43,7 @@ public:
     CaptureTask(VideoCapture* c):cap(c){
         raw = false;
         format = "PNG";
-        qfmt = QImage::Format_RGB32;
+        qfmt = QImage::Format_ARGB32;
         setAutoDelete(true);
     }
     virtual void run() {
@@ -129,7 +130,7 @@ VideoCapture::VideoCapture(QObject *parent) :
   , auto_save(true)
   , raw(false)
   , error(NoError)
-  , qfmt(QImage::Format_RGB32)
+  , qfmt(QImage::Format_ARGB32)
   , pts(0)
 {
 #if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)

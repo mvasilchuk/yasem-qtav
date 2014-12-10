@@ -54,13 +54,12 @@
 #include "StatisticsView.h"
 #include "TVView.h"
 #include "config/DecoderConfigPage.h"
-#include "config/Config.h"
 #include "config/VideoEQConfigPage.h"
 #include "config/ConfigDialog.h"
 #include "filters/OSDFilter.h"
 //#include "filters/AVFilterSubtitle.h"
 #include "playlist/PlayList.h"
-#include "common/ScreenSaver.h"
+#include "../common/common.h"
 
 /*
  *TODO:
@@ -68,13 +67,14 @@
  * use action's value to set player's parameters when start to play a new file
  */
 
-#define SLIDER_ON_VO 0
-
 #define AVDEBUG() \
     qDebug("%s %s @%d", __FILE__, __FUNCTION__, __LINE__);
 
 using namespace QtAV;
 const qreal kVolumeInterval = 0.05;
+
+extern QStringList idsToNames(QVector<VideoDecoderId> ids);
+extern QVector<VideoDecoderId> idsFromNames(const QStringList& names);
 
 void QLabelSetElideText(QLabel *label, QString text, int W = 0)
 {
@@ -151,10 +151,10 @@ void MainWindow::initPlayer()
     onCaptureConfigChanged();
     onAVFilterConfigChanged();
     connect(&Config::instance(), SIGNAL(captureDirChanged(QString)), SLOT(onCaptureConfigChanged()));
-    connect(&Config::instance(), SIGNAL(captureFormatChanged(QByteArray)), SLOT(onCaptureConfigChanged()));
+    connect(&Config::instance(), SIGNAL(captureFormatChanged(QString)), SLOT(onCaptureConfigChanged()));
     connect(&Config::instance(), SIGNAL(captureQualityChanged(int)), SLOT(onCaptureConfigChanged()));
     connect(&Config::instance(), SIGNAL(avfilterChanged()), SLOT(onAVFilterConfigChanged()));
-    connect(mpStopBtn, SIGNAL(clicked()), mpPlayer, SLOT(stop()));
+    connect(mpStopBtn, SIGNAL(clicked()), this, SLOT(stopUnload()));
     connect(mpForwardBtn, SIGNAL(clicked()), mpPlayer, SLOT(seekForward()));
     connect(mpBackwardBtn, SIGNAL(clicked()), mpPlayer, SLOT(seekBackward()));
     connect(mpVolumeBtn, SIGNAL(clicked()), SLOT(showHideVolumeBar()));
@@ -174,6 +174,12 @@ void MainWindow::initPlayer()
     connect(mpVideoEQ, SIGNAL(saturationChanged(int)), this, SLOT(onSaturationChanged(int)));
 
     emit ready(); //emit this signal after connection. otherwise the slots may not be called for the first time
+}
+
+void MainWindow::stopUnload()
+{
+    mpPlayer->stop();
+    mpPlayer->unload();
 }
 
 void MainWindow::setupUi()
@@ -196,12 +202,6 @@ void MainWindow::setupUi()
     mpTimeSlider->setTracking(true);
     mpTimeSlider->setOrientation(Qt::Horizontal);
     mpTimeSlider->setMinimum(0);
-#if SLIDER_ON_VO
-    QGraphicsOpacityEffect *oe = new QGraphicsOpacityEffect(this);
-    oe->setOpacity(0.5);
-    mpTimeSlider->setGraphicsEffect(oe);
-#endif //SLIDER_ON_VO
-
     mpCurrent = new QLabel(mpControl);
     mpCurrent->setToolTip(tr("Current time"));
     mpCurrent->setMargin(2);
@@ -370,11 +370,11 @@ void MainWindow::setupUi()
     hb->addWidget(pRepeatLabel);
     hb->addWidget(mpRepeatB);
     vb->addLayout(hb);
-    QWidget *pRepeatWidget = new QWidget;
-    pRepeatWidget->setLayout(vb);
+    QWidget *wgt = new QWidget;
+    wgt->setLayout(vb);
 
     pWA = new QWidgetAction(0);
-    pWA->setDefaultWidget(pRepeatWidget);
+    pWA->setDefaultWidget(wgt);
     pWA->defaultWidget()->setEnabled(false);
     subMenu->addAction(pWA); //must add action after the widget action is ready. is it a Qt bug?
     mpRepeatAction = pWA;
@@ -392,23 +392,39 @@ void MainWindow::setupUi()
     act->setChecked(mpSubtitle->autoLoad());
     connect(act, SIGNAL(toggled(bool)), SLOT(toggleSubtitleAutoLoad(bool)));
     subMenu->addAction(tr("Open"), this, SLOT(openSubtitle()));
-    QWidget *csWidget = new QWidget();
+
+    wgt = new QWidget();
     hb = new QHBoxLayout();
-    csWidget->setLayout(hb);
-    hb->addWidget(new QLabel(tr("Charset")));
-    QComboBox *csBox = new QComboBox();
-    hb->addWidget(csBox);
+    wgt->setLayout(hb);
+    hb->addWidget(new QLabel(tr("Engine")));
+    QComboBox *box = new QComboBox();
+    hb->addWidget(box);
     pWA = new QWidgetAction(0);
-    pWA->setDefaultWidget(csWidget);
+    pWA->setDefaultWidget(wgt);
     subMenu->addAction(pWA); //must add action after the widget action is ready. is it a Qt bug?
-    csBox->addItem(tr("Auto detect"), "AutoDetect");
-    csBox->addItem(tr("System"), "System");
+    box->addItem("FFmpeg", "FFmpeg");
+    box->addItem("LibASS", "LibASS");
+    connect(box, SIGNAL(activated(QString)), SLOT(setSubtitleEngine(QString)));
+    mpSubtitle->setEngines(QStringList() << box->itemData(box->currentIndex()).toString());
+    box->setToolTip(tr("FFmpeg supports more subtitles but only render plain text") + "\n" + tr("LibASS supports ass styles"));
+
+    wgt = new QWidget();
+    hb = new QHBoxLayout();
+    wgt->setLayout(hb);
+    hb->addWidget(new QLabel(tr("Charset")));
+    box = new QComboBox();
+    hb->addWidget(box);
+    pWA = new QWidgetAction(0);
+    pWA->setDefaultWidget(wgt);
+    subMenu->addAction(pWA); //must add action after the widget action is ready. is it a Qt bug?
+    box->addItem(tr("Auto detect"), "AutoDetect");
+    box->addItem(tr("System"), "System");
     foreach (const QByteArray& cs, QTextCodec::availableCodecs()) {
-        csBox->addItem(cs, cs);
+        box->addItem(cs, cs);
     }
-    connect(csBox, SIGNAL(activated(QString)), SLOT(setSubtitleCharset(QString)));
-    mpSubtitle->setCodec(csBox->itemData(csBox->currentIndex()).toByteArray());
-    csBox->setToolTip(tr("Auto detect requires libchardet"));
+    connect(box, SIGNAL(activated(QString)), SLOT(setSubtitleCharset(QString)));
+    mpSubtitle->setCodec(box->itemData(box->currentIndex()).toByteArray());
+    box->setToolTip(tr("Auto detect requires libchardet"));
 
     subMenu = new ClickableMenu(tr("Audio track"));
     mpMenu->addMenu(subMenu);
@@ -566,10 +582,7 @@ void MainWindow::changeVO(QAction *action)
     VideoRendererId vid = (VideoRendererId)action->data().toInt();
     VideoRenderer *vo = VideoRendererFactory::create(vid);
     if (vo && vo->isAvailable()) {
-        if (vo->widget()) {
-            vo->widget()->resize(rect().size()); //TODO: why not mpPlayer->renderer()->rendererSize()?
-            vo->resizeRenderer(mpPlayer->renderer()->rendererSize());
-        }
+
         setRenderer(vo);
     } else {
         action->toggle(); //check state changes if clicked
@@ -613,17 +626,6 @@ void MainWindow::setRenderer(QtAV::VideoRenderer *renderer)
         return;
     mpOSD->uninstall();
     mpSubtitle->uninstall();
-#if SLIDER_ON_VO
-    int old_pos = 0;
-    int old_total = 0;
-
-    if (mpTimeSlider) {
-        old_pos = mpTimeSlider->value();
-        old_total = mpTimeSlider->maximum();
-        mpTimeSlider->hide();
-    } else {
-    }
-#endif //SLIDER_ON_VO    
     renderer->widget()->setMouseTracking(true); //mouseMoveEvent without press.
     mpPlayer->setRenderer(renderer);
     QWidget *r = 0;
@@ -643,13 +645,6 @@ void MainWindow::setRenderer(QtAV::VideoRenderer *renderer)
     mpRenderer = renderer;
     //setInSize?
     mpPlayerLayout->addWidget(renderer->widget());
-    resize(renderer->widget()->size());
-#if SLIDER_ON_VO
-    if (mpTimeSlider) {
-        mpTimeSlider->setParent(mpRenderer->widget());
-        mpTimeSlider->show();
-    }
-#endif //SLIDER_ON_VO
     if (mpVOAction) {
         mpVOAction->setChecked(false);
     }
@@ -696,7 +691,7 @@ void MainWindow::play(const QString &name)
     if (!mpRepeatEnableAction->isChecked())
         mRepeateMax = 0;
     mpPlayer->setRepeat(mRepeateMax);
-    mpPlayer->setPriority(Config::instance().decoderPriority());
+    mpPlayer->setPriority(idsFromNames(Config::instance().decoderPriorityNames()));
     mpPlayer->setOptionsForAudioCodec(mpDecoderConfigPage->audioDecoderOptions());
     mpPlayer->setOptionsForVideoCodec(mpDecoderConfigPage->videoDecoderOptions());
     mpPlayer->setOptionsForFormat(Config::instance().avformatOptions());
@@ -715,15 +710,14 @@ void MainWindow::setVideoDecoderNames(const QStringList &vd)
     foreach (const QString& v, vd) {
         vdnames << v.toLower();
     }
-    QVector<VideoDecoderId> vidp;
-    QVector<VideoDecoderId> vids = GetRegistedVideoDecoderIds();
-    foreach (VideoDecoderId vid, vids) {
-        QString v(VideoDecoderFactory::name(vid).c_str());
+    QStringList vidp;
+    QStringList vids = idsToNames(GetRegistedVideoDecoderIds());
+    foreach (const QString& v, vids) {
         if (vdnames.contains(v.toLower())) {
-            vidp.append(vid);
+            vidp.append(v);
         }
     }
-    Config::instance().decoderPriority(vidp);
+    Config::instance().setDecoderPriorityNames(vidp);
 }
 
 void MainWindow::openFile()
@@ -789,7 +783,9 @@ void MainWindow::onStartPlay()
     QTimer::singleShot(3000, this, SLOT(tryHideControlBar()));
     ScreenSaver::instance().disable();
     initAudioTrackMenu();
+    mpRepeatA->setMinimumTime(QTime(0, 0, 0).addMSecs(mpPlayer->mediaStartPosition()));
     mpRepeatA->setMaximumTime(QTime(0, 0, 0).addMSecs(mpPlayer->mediaStopPosition()));
+    mpRepeatB->setMinimumTime(QTime(0, 0, 0).addMSecs(mpPlayer->mediaStartPosition()));
     mpRepeatB->setMaximumTime(QTime(0, 0, 0).addMSecs(mpPlayer->mediaStopPosition()));
     mpRepeatA->setTime(QTime(0, 0, 0).addMSecs(mpPlayer->startPosition()));
     mpRepeatB->setTime(QTime(0, 0, 0).addMSecs(mpPlayer->stopPosition()));
@@ -807,11 +803,10 @@ void MainWindow::onStartPlay()
 
 void MainWindow::onStopPlay()
 {
-    mpPlayer->setPriority(Config::instance().decoderPriority());
+    mpPlayer->setPriority(idsFromNames(Config::instance().decoderPriorityNames()));
     if (mpPlayer->currentRepeat() < mpPlayer->repeat())
         return;
     // use shortcut to replay in EventFilter, the options will not be set, so set here
-    mpPlayer->setPriority(Config::instance().decoderPriority());
     mpPlayer->setOptionsForAudioCodec(mpDecoderConfigPage->audioDecoderOptions());
     mpPlayer->setOptionsForVideoCodec(mpDecoderConfigPage->videoDecoderOptions());
     mpPlayer->setOptionsForFormat(Config::instance().avformatOptions());
@@ -820,6 +815,8 @@ void MainWindow::onStopPlay()
     mpTimeSlider->setValue(0);
     qDebug(">>>>>>>>>>>>>>disable slider");
     mpTimeSlider->setDisabled(true);
+    mpTimeSlider->setMinimum(0);
+    mpTimeSlider->setMaximum(0);
     mpCurrent->setText("00:00:00");
     mpEnd->setText("00:00:00");
     tryShowControlBar();
@@ -881,30 +878,11 @@ void MainWindow::closeEvent(QCloseEvent *e)
 void MainWindow::resizeEvent(QResizeEvent *e)
 {
     Q_UNUSED(e);
-#if 0
-    if (e->size() == qApp->desktop()->size()) {
-        mpControl->hide();
-        mpTimeSlider->hide();
-    } else {
-        if (mpControl->isHidden())
-            mpControl->show();
-        if (mpTimeSlider->isHidden())
-            mpTimeSlider->show();
-    }
-#endif
+    QWidget::resizeEvent(e);
     /*
     if (mpTitle)
         QLabelSetElideText(mpTitle, QFileInfo(mFile).fileName(), e->size().width());
     */
-#if SLIDER_ON_VO
-    int m = 4;
-    QWidget *w = static_cast<QWidget*>(mpTimeSlider->parent());
-    if (w) {
-        mpTimeSlider->resize(w->width() - m*2, 44);
-        qDebug("%d %d %d", m, w->height() - mpTimeSlider->height() - m, w->width() - m*2);
-        mpTimeSlider->move(m, w->height() - mpTimeSlider->height() - m);
-    }
-#endif //SLIDER_ON_VO
 }
 
 void MainWindow::timerEvent(QTimerEvent *e)
@@ -932,6 +910,9 @@ void MainWindow::repeatAChanged(const QTime& t)
 void MainWindow::repeatBChanged(const QTime& t)
 {
     if (!mpPlayer)
+        return;
+    // when this slot is called? even if only range is set?
+    if (t <= mpRepeatA->time())
         return;
     mpPlayer->setStopPosition(QTime(0, 0, 0).msecsTo(t));
 }
@@ -1190,9 +1171,9 @@ void MainWindow::tryHideControlBar()
 void MainWindow::tryShowControlBar()
 {
     unsetCursor();
-    if (mpTimeSlider->isHidden())
+    if (mpTimeSlider && mpTimeSlider->isHidden())
         mpTimeSlider->show();
-    if (mpControl->isHidden())
+    if (mpControl && mpControl->isHidden())
         mpControl->show();
 }
 
@@ -1244,10 +1225,11 @@ void MainWindow::onMediaStatusChanged()
         status = "Loaded";
         break;
     default:
+        status = "";
+        onStopPlay();
         break;
     }
-    if (!status.isEmpty())
-        setWindowTitle(status);
+    setWindowTitle(status);
 }
 
 void MainWindow::onVideoEQEngineChanged()
@@ -1349,7 +1331,7 @@ void MainWindow::onAVFilterConfigChanged()
 void MainWindow::donate()
 {
     //QDesktopServices::openUrl(QUrl("https://sourceforge.net/p/qtav/wiki/Donate%20%E6%8D%90%E8%B5%A0/"));
-    QDesktopServices::openUrl(QUrl("http://wang-bin.github.io/QtAV/#donate"));
+    QDesktopServices::openUrl(QUrl("http://www.qtav.org/#donate"));
 }
 
 void MainWindow::setup()
@@ -1393,8 +1375,19 @@ void MainWindow::setSubtitleCharset(const QString &charSet)
     mpSubtitle->setCodec(box->itemData(box->currentIndex()).toByteArray());
 }
 
+void MainWindow::setSubtitleEngine(const QString &value)
+{
+    Q_UNUSED(value)
+    QComboBox *box = qobject_cast<QComboBox*>(sender());
+    if (!box)
+        return;
+    mpSubtitle->setEngines(QStringList() << box->itemData(box->currentIndex()).toString());
+}
+
 void MainWindow::workaroundRendererSize()
 {
+    if (!mpRenderer)
+        return;
     QSize s = rect().size();
     //resize(QSize(s.width()-1, s.height()-1));
     //resize(s); //window resize to fullscreen size will create another fullScreenChange event

@@ -23,9 +23,10 @@
 #if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
 #include <QtOpenGL/QGLFunctions>
 #endif
+#include "utils/Logger.h"
+
 namespace QtAV {
 namespace OpenGLHelper {
-
 
 // glActiveTexture in Qt4 on windows release mode crash for me
 #if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
@@ -86,9 +87,15 @@ bool videoFormatToGL(const VideoFormat& fmt, GLint* internal_format, GLenum* dat
 #ifdef QT_OPENGL_ES_2
         {VideoFormat::Format_ARGB32, GL_BGRA, GL_BGRA, GL_UNSIGNED_BYTE },
         {VideoFormat::Format_RGB32,  GL_BGRA, GL_BGRA, GL_UNSIGNED_BYTE },
+        // TODO:
+        {VideoFormat::Format_BGRA32,  GL_BGRA, GL_BGRA, GL_UNSIGNED_BYTE },
+        {VideoFormat::Format_ABGR32,  GL_BGRA, GL_BGRA, GL_UNSIGNED_BYTE },
 #else
         {VideoFormat::Format_RGB32,  GL_RGBA, GL_BGRA, GL_UNSIGNED_BYTE },
         {VideoFormat::Format_ARGB32, GL_RGBA, GL_BGRA, GL_UNSIGNED_BYTE },
+        // TODO:
+        {VideoFormat::Format_ABGR32,  GL_RGBA, GL_BGRA, GL_UNSIGNED_BYTE },
+        {VideoFormat::Format_BGRA32,  GL_RGBA, GL_BGRA, GL_UNSIGNED_BYTE },
 #endif
         {VideoFormat::Format_RGB24,  GL_RGB,  GL_RGB,  GL_UNSIGNED_BYTE },
     #ifdef GL_UNSIGNED_SHORT_1_5_5_5_REV

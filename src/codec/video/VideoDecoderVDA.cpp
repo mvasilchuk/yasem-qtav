@@ -23,7 +23,7 @@
 #include "QtAV/private/VideoDecoderFFmpegHW_p.h"
 #include "utils/GPUMemCopy.h"
 #include "QtAV/private/AVCompat.h"
-#include "QtAV/prepost.h"
+#include "QtAV/private/prepost.h"
 #include <assert.h>
 
 #ifdef __cplusplus
@@ -34,18 +34,18 @@ extern "C" {
 }
 #endif //__cplusplus
 #include <VideoDecodeAcceleration/VDADecoder.h>
+#include "utils/Logger.h"
 
 // TODO: add to QtAV_Compat.h?
 // FF_API_PIX_FMT
 #ifdef PixelFormat
 #undef PixelFormat
 #endif
-
-#ifdef __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__
-#if __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ >= 1070 //MAC_OS_X_VERSION_10_7
+#ifdef MAC_OS_X_VERSION_MIN_REQUIRED
+#if MAC_OS_X_VERSION_MIN_REQUIRED >= 1070 //MAC_OS_X_VERSION_10_7
 #define OSX_TARGET_MIN_LION
 #endif // 1070
-#endif //__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__
+#endif //MAC_OS_X_VERSION_MIN_REQUIRED
 
 namespace QtAV {
 
@@ -155,9 +155,21 @@ static VideoFormat::PixelFormat format_from_cv(int cv)
     return VideoFormat::Format_Invalid;
 }
 
+static int format_to_cv(VideoFormat::PixelFormat fmt)
+{
+    for (int i = 0; cv_formats[i].pixfmt != VideoFormat::Format_Invalid; ++i) {
+        if (cv_formats[i].pixfmt == fmt)
+            return cv_formats[i].cv_pixfmt;
+    }
+    return 0;
+}
+
 VideoDecoderVDA::VideoDecoderVDA()
     : VideoDecoderFFmpegHW(*new VideoDecoderVDAPrivate())
 {
+    // dynamic properties about static property details. used by UI
+    // format: detail_property
+    setProperty("detail_SSE4", tr("Optimized copy decoded data from USWC memory using SSE4.1"));
 }
 
 VideoDecoderVDA::~VideoDecoderVDA()
@@ -259,7 +271,7 @@ bool VideoDecoderVDAPrivate::setup(void **pp_hw_ctx, int w, int h)
     } else {
         memset(&hw_ctx, 0, sizeof(hw_ctx));
         hw_ctx.format = 'avc1';
-        hw_ctx.cv_pix_fmt_type = kCVPixelFormatType_420YpCbCr8Planar;
+        hw_ctx.cv_pix_fmt_type = format_to_cv(VideoFormat::Format_YUV420P);
     }
     /* Setup the libavcodec hardware context */
     *pp_hw_ctx = &hw_ctx;
@@ -309,7 +321,7 @@ bool VideoDecoderVDAPrivate::open()
 {
     qDebug("opening VDA module");
     if (codec_ctx->codec_id != AV_CODEC_ID_H264) {
-        qWarning("input codec (%s) isn't H264, canceling VDA decoding", codec_ctx->codec_name);
+        qWarning("input codec (%s) isn't H264, canceling VDA decoding", avcodec_get_name(codec_ctx->codec_id));
         return false;
     }
 #if 0
@@ -325,7 +337,7 @@ void VideoDecoderVDAPrivate::close()
 {
     restore(); //IMPORTANT. can not call restore in dtor because ctx is 0 there
     qDebug("destroying VDA decoder");
-    ff_vda_destroy_decoder(&hw_ctx) ;
+    ff_vda_destroy_decoder(&hw_ctx);
     if (copy_uswc) {
         gpu_mem.cleanCache();
     }

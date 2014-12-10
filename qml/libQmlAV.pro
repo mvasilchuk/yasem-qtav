@@ -12,7 +12,7 @@ PROJECTROOT = $$PWD/..
 preparePaths($$OUT_PWD/../out)
 
 #DESTDIR = $$BUILD_DIR/bin/QtAV
-RESOURCES += 
+RESOURCES +=
 
 QML_FILES = $$PWD/Video.qml
 
@@ -54,8 +54,8 @@ QMAKE_EXTRA_COMPILERS += extra_copy #
 EXTRA_COPY_FILES = $$qtav_qml.files
 
 QMAKE_WRITE_DEFAULT_RC = 1
-QMAKE_TARGET_COMPANY = "Shanghai University->S3 Graphics | wbsecg1@gmail.com"
-QMAKE_TARGET_DESCRIPTION = "Multimedia playback framework based on Qt & FFmpeg. https://github.com/wang-bin/QtAV"
+QMAKE_TARGET_COMPANY = "Shanghai University->S3 Graphics->Deepin | wbsecg1@gmail.com"
+QMAKE_TARGET_DESCRIPTION = "Multimedia playback framework based on Qt & FFmpeg. http://www.qtav.org"
 QMAKE_TARGET_COPYRIGHT = "Copyright (C) 2012-2014 WangBin, wbsecg1@gmail.com"
 QMAKE_TARGET_PRODUCT = "QtAV player"
 
@@ -73,10 +73,14 @@ SOURCES += \
     SGVideoNode.cpp \
     QmlAVPlayer.cpp \
     QuickSubtitle.cpp \
-    MediaMetaData.cpp
+    MediaMetaData.cpp \
+    QuickSubtitleItem.cpp \
+    QuickVideoPreview.cpp
 
 HEADERS += QmlAV/private/QQuickItemRenderer_p.h \
-    QmlAV/QuickSubtitle.h
+    QmlAV/QuickSubtitle.h \
+    QmlAV/QuickSubtitleItem.h \
+    QmlAV/QuickVideoPreview.h
 
 SDK_HEADERS += \
     QmlAV/Export.h \
@@ -101,7 +105,7 @@ target.depends += $${deb_install_list.target}
 
 target.path = $$[QT_INSTALL_QML]/QtAV
 qtav_qml.path = $$[QT_INSTALL_QML]/QtAV
-INSTALLS += target qtav_qml
+INSTALLS *= target qtav_qml
 
 MODULE = QmlAV
 include($$PROJECTROOT/deploy.pri)

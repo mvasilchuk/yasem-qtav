@@ -71,6 +71,10 @@ extern "C"
 #endif
 #endif //QTAV_HAVE(AVFILTER)
 
+#if QTAV_HAVE(AVDEVICE)
+#include <libavdevice/avdevice.h>
+#endif
+
 #ifdef __cplusplus
 }
 #endif /*__cplusplus*/
@@ -121,6 +125,18 @@ extern "C"
 #endif /*AV_VERSION_INT*/
 
 void ffmpeg_version_print();
+
+
+//TODO: always inline
+/* --gnu option of the RVCT compiler also defines __GNUC__ */
+#if defined(Q_CC_GNU) && !defined(Q_CC_RVCT)
+#define GCC_VERSION_AT_LEAST(major, minor, patch) \
+    (__GNUC__ > major || (__GNUC__ == major && (__GNUC_MINOR__ > minor \
+    || (__GNUC_MINOR__ == minor && __GNUC_PATCHLEVEL__ >= patch))))
+#else
+/* Define this for !GCC compilers, just so we can write things like GCC_VERSION_AT_LEAST(4, 1, 0). */
+#define GCC_VERSION_AT_LEAST(major, minor, patch) 0
+#endif
 
 /*TODO: libav
 avutil: error.h
@@ -343,8 +359,24 @@ typedef enum CodecID AVCodecID;
 #endif
 #endif
 
+#if QTAV_USE_LIBAV(LIBAVCODEC)
+const char *avcodec_get_name(enum AVCodecID id);
+#endif
+
+// since libav-11, ffmpeg-2.1
+#if !LIBAV_MODULE_CHECK(LIBAVCODEC, 56, 1, 0) && !FFMPEG_MODULE_CHECK(LIBAVCODEC, 55, 39, 100)
+int av_packet_copy_props(AVPacket *dst, const AVPacket *src);
+#endif
+// since libav-10, ffmpeg-2.1
+#if !LIBAV_MODULE_CHECK(LIBAVCODEC, 55, 34, 1) && !FFMPEG_MODULE_CHECK(LIBAVCODEC, 55, 39, 100)
+void av_packet_free_side_data(AVPacket *pkt);
+#endif
+
 #ifndef FF_API_OLD_GRAPH_PARSE
 #define avfilter_graph_parse_ptr(...) avfilter_graph_parse(__VA_ARGS__)
 #endif //FF_API_OLD_GRAPH_PARSE
+
+// helper functions
+const char *get_codec_long_name(AVCodecID id);
 
 #endif //QTAV_COMPAT_H

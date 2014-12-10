@@ -1,10 +1,10 @@
 import QtQuick 2.0
 import "utils.js" as Utils
 import QtQuick.Window 2.1
-
+import QtAV 1.4
 // TODO: Control.qml
 Rectangle {
-    id: control
+    id: root
     function scaled(x) {
         console.log("Screen " + screenPixelDensity + "; r: " + Screen.pixelDensity/Screen.logicalPixelDensity + "; size: " + Screen.width + "x" + Screen.height);
         console.log("screen density logical: " + Screen.logicalPixelDensity + " pixel: " + Screen.pixelDensity + "; " + x + ">>>" +x*Screen.pixelDensity/Screen.logicalPixelDensity);
@@ -69,22 +69,22 @@ Rectangle {
         hoverEnabled: true
         // onEntered, onExited
         onHoveredChanged: {
-            //var m = mapToItem(control, mouse.x, mouse.y)
-            // TODO: why control.contains(m) always true?
+            //var m = mapToItem(root, mouse.x, mouse.y)
+            // TODO: why root.contains(m) always true?
             if (containsMouse) {
                 if (timer.running) //timer may ran a few seconds(<3) ago
                     timer.stop();
-                control.aniShow()
+                root.aniShow()
             } else {
                 //if (player.playbackState !== MediaPlayer.StoppedState)
-                if (playState !== "stop")
-                    timer.start()
+                //if (playState !== "stop")
+                   // timer.start()
             }
         }
         onPressed: {
             if (timer.running) //timer may ran a few seconds(<3) ago
                 timer.stop();
-            control.aniShow()
+            root.aniShow()
         }
     }
     ProgressBar {
@@ -97,7 +97,7 @@ Rectangle {
             right: parent.right
             rightMargin: Utils.scaled(20)
         }
-        height: Utils.scaled(10)
+        height: Utils.scaled(8)
         onValueChangedByUi: {
             /*if (player.playbackState != MediaPlayer.StoppedState) {
                 player.seek(player.duration * value)
@@ -128,6 +128,10 @@ Rectangle {
               //  return
             if (playState == "stop")
                 return;
+            if (PlayerConfig.previewEnabled && preview.video.file) {
+                preview.video.timestamp = value*duration
+            }
+
             var v = value * progress.width
             preview.anchors.leftMargin = v - preview.width/2
             previewText.text = Utils.msec2string(value*duration)
@@ -162,16 +166,28 @@ Rectangle {
     }
     Rectangle {
         id: preview
-        opacity: 0.9
+        opacity: 0.8
         anchors.left: progress.left
         anchors.bottom: progress.top
-        width: Utils.scaled(60)
-        height: Utils.scaled(16)
+        width: PlayerConfig.previewEnabled ? Utils.scaled(180) : previewText.contentWidth + 2*Utils.kSpacing
+        height: PlayerConfig.previewEnabled ? Utils.scaled(120) : previewText.contentHeight + 2*Utils.kSpacing
         color: "black"
         state: "out"
+        property alias video: video
+        VideoPreview {
+            id: video
+            visible: PlayerConfig.previewEnabled
+            fillMode: VideoOutput.Stretch
+            anchors.top: parent.top
+            width: parent.width
+            height: parent.height * 4/5
+            file: mediaSource
+        }
         Text {
             id: previewText
-            anchors.fill: parent
+            width: parent.width
+            anchors.bottom: parent.bottom
+            anchors.top: PlayerConfig.previewEnabled ? video.bottom : parent.top
             text: ""
             color: "white"
             font.pixelSize: Utils.scaled(12)
@@ -250,8 +266,8 @@ Rectangle {
             bgColorSelected: "transparent"
             width: Utils.scaled(50)
             height: Utils.scaled(50)
-            icon: resurl("theme/default/play.svg")
-            iconChecked: resurl("theme/default/pause.svg")
+            icon: Utils.resurl("theme/default/play.svg")
+            iconChecked: Utils.resurl("theme/default/pause.svg")
 
             onClicked: {
                 if (mediaSource == "")
@@ -280,7 +296,7 @@ Rectangle {
                 bgColorSelected: "transparent"
                 width: Utils.scaled(35)
                 height: Utils.scaled(35)
-                icon: resurl("theme/default/stop.svg")
+                icon: Utils.resurl("theme/default/stop.svg")
                 onClicked: {
                     //player.stop()
                     stop()
@@ -292,7 +308,7 @@ Rectangle {
                 bgColorSelected: "transparent"
                 width: Utils.scaled(35)
                 height: Utils.scaled(35)
-                icon: resurl("theme/default/backward.svg")
+                icon: Utils.resurl("theme/default/backward.svg")
                 onClicked: {
                     //player.seek(player.position-10000)
                     seekBackward(10000)
@@ -309,7 +325,7 @@ Rectangle {
                 bgColorSelected: "transparent"
                 width: Utils.scaled(35)
                 height: Utils.scaled(35)
-                icon: resurl("theme/default/forward.svg")
+                icon: Utils.resurl("theme/default/forward.svg")
                 onClicked: {
                     //player.seek(player.position+10000)
                     seekForward(10000)
@@ -328,8 +344,8 @@ Rectangle {
                 bgColorSelected: "transparent"
                 width: Utils.scaled(25)
                 height: Utils.scaled(25)
-                icon: resurl("theme/default/fullscreen.svg")
-                iconChecked: resurl("theme/default/fullscreen.svg")
+                icon: Utils.resurl("theme/default/fullscreen.svg")
+                iconChecked: Utils.resurl("theme/default/fullscreen.svg")
                 visible: true
                 onCheckedChanged: {
                     if (checked)
@@ -350,7 +366,7 @@ Rectangle {
                 Text {
                     color: "white"
                     id: voltext
-                    text: volume
+                    text: Math.round(10*volume)/10
                 }
             }
         }
@@ -365,7 +381,7 @@ Rectangle {
                 bgColorSelected: "transparent"
                 width: Utils.scaled(25)
                 height: Utils.scaled(25)
-                icon: resurl("theme/default/info.svg")
+                icon: Utils.resurl("theme/default/info.svg")
                 visible: true
                 onClicked: showInfo()
             }
@@ -375,7 +391,7 @@ Rectangle {
                 bgColorSelected: "transparent"
                 width: Utils.scaled(25)
                 height: Utils.scaled(25)
-                icon: resurl("theme/default/open.svg")
+                icon: Utils.resurl("theme/default/open.svg")
                 onClicked: openFile()
             }
             Button {
@@ -384,7 +400,7 @@ Rectangle {
                 bgColorSelected: "transparent"
                 width: Utils.scaled(25)
                 height: Utils.scaled(25)
-                icon: resurl("theme/default/help.svg")
+                icon: Utils.resurl("theme/default/help.svg")
                 onClicked: showHelp()
             }
         }
@@ -393,8 +409,8 @@ Rectangle {
         id: timer
         interval: 3000
         onTriggered: {
-            control.aniHide()
-            //control.visible = false //no mouse event
+            root.aniHide()
+            //root.visible = false //no mouse event
         }
     }
     function hideIfTimedout() {
@@ -402,16 +418,16 @@ Rectangle {
     }
     PropertyAnimation {
         id: anim
-        target: control
+        target: root
         properties: "opacity"
         function reverse() {
             duration = 1500
             to = 0
-            from = control.opacity
+            from = root.opacity
         }
         function reset() {
             duration = 200
-            from = control.opacity
+            from = root.opacity
             to = 0.9
         }
     }

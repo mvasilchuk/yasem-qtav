@@ -22,10 +22,12 @@
 #ifndef QAV_DEMUXTHREAD_H
 #define QAV_DEMUXTHREAD_H
 
+#include <QtCore/QAtomicInt>
 #include <QtCore/QMutex>
 #include <QtCore/QThread>
-#include <QtCore/QWaitCondition>
-#include <QtAV/QtAV_Global.h>
+#include <QtCore/QQueue>
+#include <QtCore/QRunnable>
+#include <utils/BlockingQueue.h>
 
 namespace QtAV {
 
@@ -49,6 +51,14 @@ public:
 public slots:
     void stop(); //TODO: remove it?
     void pause(bool p);
+    void nextFrame(); // show next video frame and pause
+
+Q_SIGNALS:
+    void requestClockPause(bool value);
+
+private slots:
+    void frameDeliveredSeekOnPause();
+    void frameDeliveredNextFrame();
 
 protected:
     virtual void run();
@@ -56,17 +66,30 @@ protected:
      * If the pause state is true setted by pause(true), then block the thread and wait for pause state changed, i.e. pause(false)
      * and return true. Otherwise, return false immediatly.
      */
-    bool tryPause();
+    bool tryPause(unsigned long timeout = 100);
 
 private:
     void setAVThread(AVThread *&pOld, AVThread* pNew);
-    bool paused, seeking;
+    void newSeekRequest(QRunnable *r);
+    void processNextSeekTask();
+    void seekInternal(qint64 pos); //must call in AVDemuxThread
+    void pauseInternal(bool value);
+    void processNextPauseTask();
+
+    bool paused;
+    bool user_paused;
     volatile bool end;
     AVDemuxer *demuxer;
     AVThread *audio_thread, *video_thread;
     int audio_stream, video_stream;
     QMutex buffer_mutex;
-    QWaitCondition cond, seek_cond;
+    QWaitCondition cond;
+    BlockingQueue<QRunnable*> seek_tasks;
+    // if seeking on pause, schedule a skip pause task and a pause task
+    QQueue<QRunnable*> pause_tasks; // in thread tasks
+
+    QAtomicInt nb_next_frame;
+    friend class SeekTask;
 };
 
 } //namespace QtAV

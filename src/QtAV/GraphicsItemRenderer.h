@@ -23,7 +23,11 @@
 #define QAV_GRAPHICSITEMRENDERER_H
 
 #include <QtAV/QPainterRenderer.h>
-#include <QGraphicsWidget>
+#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+#include <QtWidgets/QGraphicsWidget>
+#else
+#include <QtGui/QGraphicsWidget>
+#endif
 
 //QGraphicsWidget will lose focus forever if TextItem inserted text. Why?
 #define CONFIG_GRAPHICSWIDGET 0
@@ -77,6 +81,7 @@ protected:
 private:
     virtual void onSetOutAspectRatioMode(OutAspectRatioMode mode);
     virtual void onSetOutAspectRatio(qreal ratio);
+    virtual bool onSetOrientation(int value);
     virtual bool onSetBrightness(qreal b);
     virtual bool onSetContrast(qreal c);
     virtual bool onSetHue(qreal h);

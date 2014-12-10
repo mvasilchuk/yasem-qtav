@@ -39,6 +39,7 @@
 
 using namespace QtAV;
 
+// TODO: watch main window
 EventFilter::EventFilter(AVPlayer *player) :
     QObject(player),
     menu(0)
@@ -86,11 +87,11 @@ void EventFilter::help()
     emit helpRequested();
     return;
     static QString help = "<h4>" +tr("Drag and drop a file to player\n") + "</h4>"
+                       "<p>" + tr("A: switch aspect ratio") + "</p>"
                        "<p>" + tr("Double click to switch fullscreen") + "</p>"
                        "<p>" + tr("Shortcut:\n") + "</p>"
                        "<p>" + tr("Space: pause/continue\n") + "</p>"
                        "<p>" + tr("F: fullscreen on/off\n") + "</p>"
-                       "<p>" + tr("I: switch video display quality\n") + "</p>"
                        "<p>" + tr("T: stays on top on/off\n") + "</p>"
                        "<p>" + tr("N: show next frame. Continue the playing by pressing 'Space'\n") + "</p>"
                        "<p>" + tr("Ctrl+O: open a file\n") + "</p>"
@@ -98,7 +99,7 @@ void EventFilter::help()
                        "<p>" + tr("P: replay\n") + "</p>"
                        "<p>" + tr("Q/ESC: quit\n") + "</p>"
                        "<p>" + tr("S: stop\n") + "</p>"
-                       "<p>" + tr("R: switch aspect ratio") + "</p>"
+                       "<p>" + tr("R: rotate 90") + "</p>"
                        "<p>" + tr("M: mute on/off\n") + "</p>"
                        "<p>" + tr("C: capture video") + "</p>"
                        "<p>" + tr("Up/Down: volume +/-\n") + "</p>"
@@ -233,10 +234,16 @@ bool EventFilter::eventFilter(QObject *watched, QEvent *event)
                 player->audio()->setMute(!player->audio()->isMute());
             }
             break;
-        case Qt::Key_R: {
+        case Qt::Key_A: {
             VideoRenderer* renderer = player->renderer();
             VideoRenderer::OutAspectRatioMode r = renderer->outAspectRatioMode();
             renderer->setOutAspectRatioMode(VideoRenderer::OutAspectRatioMode(((int)r+1)%2));
+        }
+            break;
+        case Qt::Key_R: {
+            VideoRenderer* renderer = player->renderer();
+            renderer->setOrientation(renderer->orientation() + 90);
+            qDebug("orientation: %d", renderer->orientation());
         }
             break;
         case Qt::Key_T: {

@@ -69,6 +69,7 @@ signals:
     void ready();
 
 private slots:
+    void stopUnload();
     void about();
     void help();
     void openUrl();
@@ -125,6 +126,7 @@ private slots:
     void toggleSubtitleAutoLoad(bool value);
     void openSubtitle();
     void setSubtitleCharset(const QString& charSet);
+    void setSubtitleEngine(const QString& value);
 
 protected:
     virtual void closeEvent(QCloseEvent *e);

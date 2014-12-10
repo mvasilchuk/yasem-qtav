@@ -57,10 +57,17 @@ static inline QVector<VideoDecoderId> VideoDecodersFromNames(const QStringList& 
 QmlAVPlayer::QmlAVPlayer(QObject *parent) :
     QObject(parent)
   , m_complete(false)
+  , m_mute(false)
   , mAutoPlay(false)
   , mAutoLoad(false)
+  , mHasAudio(false)
+  , mHasVideo(false)
   , mLoopCount(1)
+  , mPlaybackRate(1.0)
+  , mVolume(1.0)
   , mPlaybackState(StoppedState)
+  , mError(NoError)
+  , m_status(QtAV::NoMedia)
   , mpPlayer(0)
   , mChannelLayout(ChannelLayoutAuto)
 {
@@ -69,10 +76,14 @@ QmlAVPlayer::QmlAVPlayer(QObject *parent) :
 void QmlAVPlayer::classBegin()
 {
     mpPlayer = new AVPlayer(this);
+    connect(mpPlayer, SIGNAL(mediaStatusChanged(QtAV::MediaStatus)), SLOT(_q_statusChanged()));
+    connect(mpPlayer, SIGNAL(error(QtAV::AVError)), SLOT(_q_error(QtAV::AVError)));
     connect(mpPlayer, SIGNAL(paused(bool)), SLOT(_q_paused(bool)));
     connect(mpPlayer, SIGNAL(started()), SLOT(_q_started()));
     connect(mpPlayer, SIGNAL(stopped()), SLOT(_q_stopped()));
     connect(mpPlayer, SIGNAL(positionChanged(qint64)), SIGNAL(positionChanged()));
+    connect(this, SIGNAL(volumeChanged()), SLOT(applyVolume()));
+    connect(this, SIGNAL(channelLayoutChanged()), SLOT(applyChannelLayout()));
 
     mVideoCodecs << "FFmpeg";
 
@@ -85,11 +96,7 @@ void QmlAVPlayer::componentComplete()
 {
     // TODO: set player parameters
     if (mSource.isValid() && (mAutoLoad || mAutoPlay)) {
-        if (mSource.isLocalFile()) {
-            mpPlayer->setFile(mSource.toLocalFile());
-        } else {
-            mpPlayer->setFile(mSource.toString());
-        }
+        mpPlayer->setFile(QUrl::fromPercentEncoding(mSource.toEncoded()));
     }
 
     m_complete = true;
@@ -105,12 +112,16 @@ void QmlAVPlayer::componentComplete()
 
 bool QmlAVPlayer::hasAudio() const
 {
-    return mpPlayer->audioStreamCount() > 0;
+    if (!m_complete)
+        return false;
+    return mHasAudio;
 }
 
 bool QmlAVPlayer::hasVideo() const
 {
-    return mpPlayer->videoStreamCount() > 0;
+    if (!m_complete)
+        return false;
+    return mHasVideo;
 }
 
 QUrl QmlAVPlayer::source() const
@@ -123,14 +134,25 @@ void QmlAVPlayer::setSource(const QUrl &url)
     if (mSource == url)
         return;
     mSource = url;
-    if (mSource.isLocalFile()) {
-        mpPlayer->setFile(mSource.toLocalFile());
-    } else {
-        mpPlayer->setFile(mSource.toString());
-    }
+    qDebug() << url;
+    mpPlayer->setFile(QUrl::fromPercentEncoding(mSource.toEncoded()));
     emit sourceChanged(); //TODO: emit only when player loaded a new source
+
+    if (mHasAudio) {
+        mHasAudio = false;
+        emit hasAudioChanged();
+    }
+    if (mHasVideo) {
+        mHasVideo = false;
+        emit hasVideoChanged();
+    }
+
     // TODO: in componentComplete()?
     if (m_complete && (mAutoLoad || mAutoPlay)) {
+        mError = NoError;
+        mErrorString = tr("No error");
+        emit error(mError, mErrorString);
+        emit errorChanged();
         stop();
         //mpPlayer->load(); //QtAV internal bug: load() or play() results in reload
         if (mAutoPlay) {
@@ -193,6 +215,20 @@ void QmlAVPlayer::setVideoCodecPriority(const QStringList &p)
     emit videoCodecPriorityChanged();
 }
 
+QVariantMap QmlAVPlayer::videoCodecOptions() const
+{
+    return vcodec_opt;
+}
+
+void QmlAVPlayer::setVideoCodecOptions(const QVariantMap &value)
+{
+    if (value == vcodec_opt)
+        return;
+    vcodec_opt = value;
+    emit videoCodecOptionsChanged();
+    // player maybe not ready
+}
+
 static AudioFormat::ChannelLayout toAudioFormatChannelLayout(QmlAVPlayer::ChannelLayout ch)
 {
     struct {
@@ -214,27 +250,10 @@ static AudioFormat::ChannelLayout toAudioFormatChannelLayout(QmlAVPlayer::Channe
 
 void QmlAVPlayer::setChannelLayout(ChannelLayout channel)
 {
-    AudioOutput *ao = mpPlayer->audio();
-    if (ao && ao->isAvailable()) {
-        AudioFormat af = ao->audioFormat();
-        AudioFormat::ChannelLayout ch = toAudioFormatChannelLayout(channel);
-        if (channel == ChannelLayoutAuto || ch == af.channelLayout()) {
-            return;
-        }
-        af.setChannelLayout(ch);
-        if (!ao->close()) {
-            qWarning("close audio failed");
-            return;
-        }
-        ao->setAudioFormat(af);
-        if (!ao->open()) {
-            qWarning("open audio failed");
-            return;
-        }
-    }
+    if (mChannelLayout == channel)
+        return;
     mChannelLayout = channel;
-    if (channel != ChannelLayout())
-        emit channelLayoutChanged();
+    emit channelLayoutChanged();
 }
 
 QmlAVPlayer::ChannelLayout QmlAVPlayer::channelLayout() const
@@ -267,48 +286,64 @@ void QmlAVPlayer::setLoopCount(int c)
 
 qreal QmlAVPlayer::volume() const
 {
-    AudioOutput *ao = mpPlayer->audio();
-    if (ao && ao->isAvailable()) {
-        return ao->volume();
-    }
-    return 0;
+    return mVolume;
 }
 
 void QmlAVPlayer::setVolume(qreal volume)
 {
-    AudioOutput *ao = mpPlayer->audio();
-    if (ao && ao->isAvailable() && ao->volume() != volume) {
-        ao->setVolume(volume);
-        emit volumeChanged();
+    if (mVolume < 0) {
+        qWarning("volume must > 0");
+        return;
     }
+    if (mVolume == volume)
+        return;
+    mVolume = volume;
+    emit volumeChanged();
 }
 
 bool QmlAVPlayer::isMuted() const
 {
-    return mpPlayer->isMute();
+    return m_mute;
 }
 
 void QmlAVPlayer::setMuted(bool m)
 {
-    if (mpPlayer->isMute() == m)
+    if (isMuted() == m)
         return;
-    mpPlayer->setMute(m);
+    m_mute = m;
+    if (mpPlayer)
+        mpPlayer->setMute(m);
     emit mutedChanged();
 }
 
 int QmlAVPlayer::duration() const
 {
-    return mpPlayer->duration();
+    return mpPlayer ? mpPlayer->duration() : 0;
 }
 
 int QmlAVPlayer::position() const
 {
-    return mpPlayer->position();
+    return mpPlayer ? mpPlayer->position() : 0;
 }
 
 bool QmlAVPlayer::isSeekable() const
 {
     return true;
+}
+
+QmlAVPlayer::Status QmlAVPlayer::status() const
+{
+    return (Status)m_status;
+}
+
+QmlAVPlayer::Error QmlAVPlayer::error() const
+{
+    return mError;
+}
+
+QString QmlAVPlayer::errorString() const
+{
+    return mErrorString;
 }
 
 QmlAVPlayer::PlaybackState QmlAVPlayer::playbackState() const
@@ -321,7 +356,7 @@ void QmlAVPlayer::setPlaybackState(PlaybackState playbackState)
     if (mPlaybackState == playbackState) {
         return;
     }
-    if (!m_complete)
+    if (!m_complete || !mpPlayer)
         return;
     mPlaybackState = playbackState;
     switch (mPlaybackState) {
@@ -330,10 +365,15 @@ void QmlAVPlayer::setPlaybackState(PlaybackState playbackState)
             mpPlayer->pause(false);
         } else {
             mpPlayer->setRepeat(mLoopCount - 1);
+            if (!vcodec_opt.isEmpty()) {
+                QVariantHash vcopt;
+                for (QVariantMap::const_iterator cit = vcodec_opt.cbegin(); cit != vcodec_opt.cend(); ++cit) {
+                    vcopt[cit.key()] = cit.value();
+                }
+                if (!vcopt.isEmpty())
+                    mpPlayer->setOptionsForVideoCodec(vcopt);
+            }
             mpPlayer->play();
-            setChannelLayout(channelLayout());
-            // TODO: in load()?
-            m_metaData->setValuesFromStatistics(mpPlayer->statistics());
         }
         break;
     case PausedState:
@@ -341,6 +381,7 @@ void QmlAVPlayer::setPlaybackState(PlaybackState playbackState)
         break;
     case StoppedState:
         mpPlayer->stop();
+        mpPlayer->unload();
         break;
     default:
         break;
@@ -349,14 +390,16 @@ void QmlAVPlayer::setPlaybackState(PlaybackState playbackState)
 
 qreal QmlAVPlayer::playbackRate() const
 {
-    return mpPlayer->speed();
+    return mPlaybackRate;
 }
 
 void QmlAVPlayer::setPlaybackRate(qreal s)
 {
-    if (mpPlayer->speed() == s)
+    if (playbackRate() == s)
         return;
-    mpPlayer->setSpeed(s);
+    mPlaybackRate = s;
+    if (mpPlayer)
+        mpPlayer->setSpeed(s);
     emit playbackRateChanged();
 }
 
@@ -390,27 +433,61 @@ void QmlAVPlayer::stop()
 
 void QmlAVPlayer::nextFrame()
 {
+    if (!mpPlayer)
+        return;
     mpPlayer->playNextFrame();
 }
 
 void QmlAVPlayer::seek(int offset)
 {
+    if (!mpPlayer)
+        return;
     mpPlayer->seek(qint64(offset));
 }
 
 void QmlAVPlayer::seekForward()
 {
+    if (!mpPlayer)
+        return;
     mpPlayer->seekForward();
 }
 
 void QmlAVPlayer::seekBackward()
 {
+    if (!mpPlayer)
+        return;
     mpPlayer->seekBackward();
+}
+
+void QmlAVPlayer::_q_error(const AVError &e)
+{
+    mError = NoError;
+    mErrorString = e.string();
+    const AVError::ErrorCode ec = e.error();
+    if (ec <= AVError::NoError)
+        mError = NoError;
+    else if (ec <= AVError::NetworkError)
+        mError = NetworkError;
+    else if (ec <= AVError::ResourceError)
+        mError = ResourceError;
+    else if (ec <= AVError::FormatError)
+        mError = FormatError;
+    else if (ec <= AVError::AccessDenied)
+        mError = AccessDenied;
+    //else
+      //  err = ServiceMissing;
+    emit error(mError, mErrorString);
+    emit errorChanged();
+}
+
+void QmlAVPlayer::_q_statusChanged()
+{
+    m_status = mpPlayer->mediaStatus();
+    emit statusChanged();
 }
 
 void QmlAVPlayer::_q_paused(bool p)
 {
-    qDebug("*********%s @%d", __FUNCTION__, __LINE__);
     if (p) {
         mPlaybackState = PausedState;
         emit paused();
@@ -423,16 +500,62 @@ void QmlAVPlayer::_q_paused(bool p)
 
 void QmlAVPlayer::_q_started()
 {
-    qDebug("*********%s @%d", __FUNCTION__, __LINE__);
     mPlaybackState = PlayingState;
+    applyChannelLayout();
+    // applyChannelLayout() first because it may reopen audio device
+    applyVolume();
+    mpPlayer->setMute(isMuted());
+    mpPlayer->setSpeed(playbackRate());
+    // TODO: in load()?
+    m_metaData->setValuesFromStatistics(mpPlayer->statistics());
+    if (!mHasAudio) {
+        mHasAudio = mpPlayer->audioStreamCount() > 0;
+        if (mHasAudio)
+            emit hasAudioChanged();
+    }
+    if (!mHasVideo) {
+        mHasVideo = mpPlayer->videoStreamCount() > 0;
+        if (mHasVideo)
+            emit hasVideoChanged();
+    }
     emit playing();
     emit playbackStateChanged();
 }
 
 void QmlAVPlayer::_q_stopped()
 {
-    qDebug("*********%s @%d", __FUNCTION__, __LINE__);
     mPlaybackState = StoppedState;
     emit stopped();
     emit playbackStateChanged();
+}
+
+void QmlAVPlayer::applyVolume()
+{
+    AudioOutput *ao = mpPlayer->audio();
+    if (!ao || !ao->isAvailable())
+        return;
+    if (ao->volume() == volume())
+        return;
+    ao->setVolume(volume());
+}
+
+void QmlAVPlayer::applyChannelLayout()
+{
+    AudioOutput *ao = mpPlayer->audio();
+    if (!ao || !ao->isAvailable())
+        return;
+    AudioFormat af = ao->audioFormat();
+    AudioFormat::ChannelLayout ch = toAudioFormatChannelLayout(channelLayout());
+    if (channelLayout() == ChannelLayoutAuto || ch == af.channelLayout())
+        return;
+    af.setChannelLayout(ch);
+    if (!ao->close()) {
+        qWarning("close audio failed");
+        return;
+    }
+    ao->setAudioFormat(af);
+    if (!ao->open()) {
+        qWarning("open audio failed");
+        return;
+    }
 }

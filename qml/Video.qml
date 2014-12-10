@@ -1,6 +1,6 @@
 
 import QtQuick 2.0
-import QtAV 1.3
+import QtAV 1.4
 
 /*!
     \qmltype Video
@@ -62,6 +62,8 @@ import QtAV 1.3
 Item {
     id: video
 
+    property alias subtitle: subtitle
+    property alias subtitleText: text_sub // not for ass.
     /*** Properties of VideoOutput ***/
     /*!
         \qmlproperty enumeration Video::fillMode
@@ -91,11 +93,18 @@ Item {
         The orientation of the \c Video in degrees. Only multiples of 90
         degrees is supported, that is 0, 90, 180, 270, 360, etc.
     */
-    //property alias orientation:         videoOut.orientation
+    property alias orientation:         videoOut.orientation
 
 
     /*** Properties of MediaPlayer ***/
 
+    /*!
+      A list of video codec names in priority order.
+      Example: videoCodecPriority: ["VAAPI", "FFmpeg"]
+      Default is ["FFmpeg"]
+    s*/
+    property alias videoCodecPriority:   player.videoCodecPriority
+    property alias channelLayout:        player.channelLayout
     /*!
         \qmlproperty enumeration Video::playbackState
 
@@ -158,14 +167,14 @@ Item {
         instantiated.
         \endlist
     */
-    //property alias error:           player.error
+    property alias error:           player.error
 
     /*!
         \qmlproperty string Video::errorString
 
         This property holds a string describing the current error condition in more detail.
     */
-    //property alias errorString:     player.errorString
+    property alias errorString:     player.errorString
 
     /*!
         \qmlproperty enumeration Video::availability
@@ -266,7 +275,7 @@ Item {
         \li MediaPlayer.UnknownStatus - the status of the media cannot be determined.
         \endlist
     */
-    //property alias status:          player.status
+    property alias status:          player.status
 
     /*!
         \qmlproperty real Video::volume
@@ -309,6 +318,28 @@ Item {
         id: videoOut
         anchors.fill: video
         source: player
+
+        SubtitleItem {
+            id: ass_sub
+            rotation: -videoOut.orientation
+            fillMode: parent.fillMode
+            source: subtitle
+            anchors.fill: parent
+        }
+        Text {
+            id: text_sub
+            rotation: -videoOut.orientation
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignBottom
+            font {
+                pointSize: 20
+                bold: true
+            }
+            style: Text.Outline
+            styleColor: "blue"
+            color: "white"
+            anchors.fill: parent
+        }
     }
 
     MediaPlayer {
@@ -360,6 +391,22 @@ Item {
         player.seek(offset);
     }
 
+    Subtitle {
+        id: subtitle
+        player: player
+        onContentChanged: {
+            if (!canRender || !ass_sub.visible)
+                text_sub.text = text
+        }
+        onEngineChanged: { // assume a engine canRender is only used as a renderer
+            ass_sub.visible = canRender
+            text_sub.visible = !canRender
+        }
+        onEnableChanged: {
+            ass_sub.visible = enabled
+            text_sub.visible = enabled
+        }
+    }
 }
 
 // ***************************************

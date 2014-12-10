@@ -20,9 +20,15 @@
 ******************************************************************************/
 
 #include "QtAV/QtAV_Global.h"
+// TODO: move to an internal header
+#if QT_VERSION < QT_VERSION_CHECK(5, 0, 0) || defined(QT_WIDGETS_LIB)
+#ifndef QTAV_HAVE_WIDGETS
+#define QTAV_HAVE_WIDGETS 1
+#endif //QTAV_HAVE_WIDGETS
+#endif
+
 #include <QtCore/QObject>
 #include <QtCore/QRegExp>
-#include <QtDebug>
 #if QTAV_HAVE(WIDGETS)
 #include <QBoxLayout>
 #include <QMessageBox>
@@ -32,6 +38,7 @@
 #endif //QTAV_HAVE(WIDGETS)
 #include "QtAV/version.h"
 #include "QtAV/private/AVCompat.h"
+#include "utils/Logger.h"
 
 unsigned QtAV_Version()
 {
@@ -43,12 +50,25 @@ QString QtAV_Version_String()
     return QTAV_VERSION_STR;
 }
 
+#define QTAV_VERSION_STR_LONG   QTAV_VERSION_STR "(" __DATE__ ", " __TIME__ ")"
+
 QString QtAV_Version_String_Long()
 {
     return QTAV_VERSION_STR_LONG;
 }
 
 namespace QtAV {
+
+namespace Internal {
+// disable logging for release. you can manually enable it.
+#ifdef QT_NO_DEBUG
+static QtAV::LogLevel gLogLevel = QtAV::LogOff;
+#else
+static QtAV::LogLevel gLogLevel = QtAV::LogAll;
+#endif
+static bool gLogLevelSet = false;
+bool isLogLevelSet() { return gLogLevelSet;}
+} //namespace Internal
 
 //TODO: auto add new depend libraries information
 void about()
@@ -118,6 +138,9 @@ QString aboutFFmpeg_HTML()
     #if QTAV_HAVE(AVRESAMPLE)
         { FF_COMPONENT(avresample, AVRESAMPLE) },
     #endif //QTAV_HAVE(AVRESAMPLE)
+    #if QTAV_HAVE(AVDEVICE)
+        { FF_COMPONENT(avdevice, AVDEVICE) },
+    #endif //QTAV_HAVE(AVDEVICE)
 #undef FF_COMPONENT
         { 0, 0, 0, 0, 0 }
     };
@@ -164,11 +187,22 @@ QString aboutQtAV_HTML()
             "<p>" + QObject::tr("A media playing library base on Qt and FFmpeg.\n") + "</p>"
             "<p>" + QObject::tr("Distributed under the terms of LGPLv2.1 or later.\n") + "</p>"
             "<p>Copyright (C) 2012-2014 Wang Bin (aka. Lucas Wang) <a href='mailto:wbsecg1@gmail.com'>wbsecg1@gmail.com</a></p>\n"
-            "<p>" + QObject::tr("Shanghai University->S3 Graphics, Shanghai, China") + "</p>\n"
-            "<p>" + QObject::tr("Donate") + ": <a href='http://wang-bin.github.io/QtAV#donate'>http://wang-bin.github.io/QtAV#donate</a></p>\n"
+            "<p>" + QObject::tr("Shanghai University->S3 Graphics->Deepin, Shanghai, China") + "</p>\n"
+            "<p>" + QObject::tr("Donate") + ": <a href='http://www.qtav.org#donate'>http://www.qtav.org#donate</a></p>\n"
             "<p>" + QObject::tr("Source") + ": <a href='https://github.com/wang-bin/QtAV'>https://github.com/wang-bin/QtAV</a></p>\n"
-            "<p>" + QObject::tr("Web Site") + ": <a href='http://wang-bin.github.io/QtAV'>http://wang-bin.github.io/QtAV</a></p>";
+            "<p>" + QObject::tr("Home page") + ": <a href='http://www.qtav.org'>http://www.qtav.org</a></p>";
     return about;
+}
+
+void setLogLevel(LogLevel value)
+{
+    Internal::gLogLevelSet = true;
+    Internal::gLogLevel = value;
+}
+
+LogLevel logLevel()
+{
+    return (LogLevel)Internal::gLogLevel;
 }
 
 void setFFmpegLogHandler(void (*callback)(void *, int, const char *, va_list))
@@ -183,19 +217,14 @@ static void qtav_ffmpeg_log_callback(void* , int level,const char* fmt, va_list 
 {
     QString qmsg = "{FFmpeg} " + QString().vsprintf(fmt, vl);
     qmsg = qmsg.trimmed();
-    QtMsgType mt = QtDebugMsg;
     if (level == AV_LOG_WARNING || level == AV_LOG_ERROR)
-        mt = QtWarningMsg;
+        qWarning() << qmsg;
     else if (level == AV_LOG_FATAL)
-        mt = QtCriticalMsg;
+        qFatal("%s", qmsg.toUtf8().constData());
     else if (level == AV_LOG_PANIC)
-        mt = QtFatalMsg;
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
-    QMessageLogContext ctx;
-    qt_message_output(mt, ctx, qmsg);
-#else
-    qt_message_output(mt, qPrintable(qmsg));
-#endif //QT_VERSION
+        qFatal("%s", qmsg.toUtf8().constData());
+    else
+        qDebug() << qmsg;
 }
 
 // TODO: static link. move all into 1
@@ -204,6 +233,13 @@ class InitFFmpegLog {
 public:
     InitFFmpegLog() {
         setFFmpegLogHandler(qtav_ffmpeg_log_callback);
+        const QByteArray env = qgetenv("QTAV_FFMPEG_LOG");
+        if (env.isEmpty())
+            return;
+        bool ok = false;
+        const int level = env.toInt(&ok);
+        if ((ok && level == 0) || env.toLower().endsWith("off"))
+            setFFmpegLogHandler(0);
     }
 };
 InitFFmpegLog fflog;

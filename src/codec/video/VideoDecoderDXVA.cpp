@@ -24,8 +24,9 @@
 #include "QtAV/private/VideoDecoderFFmpegHW_p.h"
 #include "QtAV/Packet.h"
 #include "QtAV/private/AVCompat.h"
-#include "QtAV/prepost.h"
+#include "QtAV/private/prepost.h"
 #include "utils/GPUMemCopy.h"
+#include "utils/Logger.h"
 
 // TODO: add to QtAV_Compat.h?
 // FF_API_PIX_FMT
@@ -379,6 +380,10 @@ public:
 VideoDecoderDXVA::VideoDecoderDXVA()
     : VideoDecoderFFmpegHW(*new VideoDecoderDXVAPrivate())
 {
+    // dynamic properties about static property details. used by UI
+    // format: detail_property
+    setProperty("detail_surfaces", tr("Decoding surfaces.") + " " + tr("0: auto"));
+    setProperty("detail_SSE4", tr("Optimized copy decoded data from USWC memory using SSE4.1"));
 }
 
 VideoDecoderId VideoDecoderDXVA::id() const

@@ -48,7 +48,7 @@ NAME = QtAV
 }
 eval(LIB$$upper($$NAME)_PRI_INCLUDED = 1)
 
-LIB_VERSION = 1.4.0 #0.x.y may be wrong for dll
+LIB_VERSION = 1.4.1 #0.x.y may be wrong for dll
 ios: STATICLINK=1
 isEmpty(STATICLINK): STATICLINK = 0  #1 or 0. use static lib or not
 
@@ -72,11 +72,6 @@ win32: {
     PROJECT_LIBDIR = $$BUILD_DIR/../../../bin
 }
 
-#for system include path
-*msvc* {
-} else {
-    QMAKE_CXXFLAGS += -isystem $$PROJECT_SRCPATH -isystem $$PROJECT_SRCPATH/..
-}
 INCLUDEPATH *= $$PROJECT_SRCPATH $$PROJECT_SRCPATH/.. $$PROJECT_SRCPATH/$$NAME
 DEPENDPATH *= $$PROJECT_SRCPATH
 #QMAKE_LFLAGS_RPATH += #will append to rpath dir
