@@ -1,6 +1,6 @@
 /******************************************************************************
     QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2014 Wang Bin <wbsecg1@gmail.com>
+    Copyright (C) 2012-2015 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -19,33 +19,41 @@
     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 ******************************************************************************/
 
-#ifndef QTAV_OPENGLWIDGETRENDERER_H
-#define QTAV_OPENGLWIDGETRENDERER_H
 
-#include <QtWidgets/QOpenGLWidget>
-#include <QtAV/OpenGLRendererBase.h>
+#ifndef QTAV_IMAGECONVERTER_P_H
+#define QTAV_IMAGECONVERTER_P_H
+
+#include "QtAV/private/AVCompat.h"
+#include <QtCore/QByteArray>
 
 namespace QtAV {
 
-class OpenGLWidgetRendererPrivate;
-class Q_AV_EXPORT OpenGLWidgetRenderer : public QOpenGLWidget, public OpenGLRendererBase
+class ImageConverter;
+class ImageConverterPrivate : public DPtrPrivate<ImageConverter>
 {
-    DPTR_DECLARE_PRIVATE(OpenGLWidgetRenderer)
 public:
-    explicit OpenGLWidgetRenderer(QWidget* parent = 0, Qt::WindowFlags f = 0);
-    virtual void onUpdate() Q_DECL_OVERRIDE;
+    ImageConverterPrivate()
+        : interlaced(false)
+        , w_in(0),h_in(0)
+        , w_out(0),h_out(0)
+        , fmt_in(PIX_FMT_YUV420P)
+        , fmt_out(PIX_FMT_RGB32)
+        , brightness(0)
+        , contrast(0)
+        , saturation(0)
+    {}
+    virtual bool setupColorspaceDetails(bool force = true) {
+        Q_UNUSED(force);
+        return true;
+    }
 
-    virtual VideoRendererId id() const Q_DECL_OVERRIDE;
-    virtual QWidget* widget() Q_DECL_OVERRIDE { return this; }
-protected:
-    virtual void initializeGL() Q_DECL_OVERRIDE;
-    virtual void paintGL() Q_DECL_OVERRIDE;
-    virtual void resizeGL(int w, int h) Q_DECL_OVERRIDE;
-    virtual void resizeEvent(QResizeEvent *e) Q_DECL_OVERRIDE;
-    virtual void showEvent(QShowEvent *) Q_DECL_OVERRIDE;
+    bool interlaced;
+    int w_in, h_in, w_out, h_out;
+    int fmt_in, fmt_out;
+    int brightness, contrast, saturation;
+    QByteArray data_out;
+    AVPicture picture;
 };
-typedef OpenGLWidgetRenderer VideoRendererOpenGLWidget;
 
 } //namespace QtAV
-
-#endif // QTAV_OPENGLWIDGETRENDERER_H
+#endif // QTAV_IMAGECONVERTER_P_H

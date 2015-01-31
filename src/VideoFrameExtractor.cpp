@@ -1,3 +1,24 @@
+/******************************************************************************
+    QtAV:  Media play library based on Qt and FFmpeg
+    Copyright (C) 2014-2015 Wang Bin <wbsecg1@gmail.com>
+
+*   This file is part of QtAV
+
+    This library is free software; you can redistribute it and/or
+    modify it under the terms of the GNU Lesser General Public
+    License as published by the Free Software Foundation; either
+    version 2.1 of the License, or (at your option) any later version.
+
+    This library is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+    Lesser General Public License for more details.
+
+    You should have received a copy of the GNU Lesser General Public
+    License along with this library; if not, write to the Free Software
+    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+******************************************************************************/
+
 #include "QtAV/VideoFrameExtractor.h"
 #include <QtCore/QCoreApplication>
 #include <QtCore/QQueue>
@@ -99,10 +120,10 @@ public:
         dec_opt_normal["avcodec"] = opt; // avcodec need correct string or value in libavcodec
         codecs
 #if QTAV_HAVE(DXVA)
-                     << "DXVA"
+                    // << "DXVA"
 #endif //QTAV_HAVE(DXVA)
 #if QTAV_HAVE(VAAPI)
-                     << "VAAPI"
+                    // << "VAAPI"
 #endif //QTAV_HAVE(VAAPI)
 #if QTAV_HAVE(CEDARV)
                     //<< "Cedarv"
@@ -117,27 +138,28 @@ public:
         thread.waitStop();
         // close codec context first.
         decoder.reset(0);
-        demuxer.close();
+        demuxer.unload();
     }
 
     bool checkAndOpen() {
-        const bool loaded = demuxer.isLoaded(source);
-        if (loaded && decoder)
+        const bool loaded = demuxer.fileName() == source && demuxer.isLoaded();
+        if (loaded && decoder && !demuxer.atEnd())
             return true;
         seek_count = 0;
         if (decoder) { // new source
             decoder->close();
             decoder.reset(0);
         }
-        if (!loaded) {
-            demuxer.close();
-            if (!demuxer.loadFile(source)) {
+        if (!loaded || demuxer.atEnd()) {
+            demuxer.unload();
+            demuxer.setMedia(source);
+            if (!demuxer.load()) {
                 return false;
             }
         }
         has_video = demuxer.videoStreams().size() > 0;
         if (!has_video) {
-            demuxer.close();
+            demuxer.unload();
             return false;
         }
         if (codecs.isEmpty())
@@ -197,6 +219,10 @@ public:
             else
                 qWarning("Not seek to key frame!!!");
         }
+        if (!pkt.isValid()) {
+            qWarning("VideoFrameExtractor failed to get a packet at %lld", value);
+            return false;
+        }
         // no flush is required because we compare the correct decoded timestamp
         //decoder->flush(); //must flush otherwise old frames will be decoded at the beginning
         decoder->setOptions(dec_opt_normal);
@@ -253,7 +279,7 @@ public:
             // store the last decoded frame because next frame may be out of range
             const VideoFrame f = decoder->frame();
             if (!f.isValid()) {
-                qDebug("VideoFrameExtractor: invalid frame!!!");
+                //qDebug("VideoFrameExtractor: invalid frame!!!");
                 continue;
             }
             frame = f;

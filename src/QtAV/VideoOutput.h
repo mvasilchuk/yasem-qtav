@@ -1,6 +1,6 @@
 /******************************************************************************
     QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2014 Wang Bin <wbsecg1@gmail.com>
+    Copyright (C) 2014-2015 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -106,10 +106,6 @@ private: //for proxy
     virtual void setStatistics(Statistics* statistics); //called by friend AVPlayer
     virtual bool onInstallFilter(Filter *filter);
     virtual bool onUninstallFilter(Filter *filter);
-    virtual void onAddOutputSet(OutputSet *set);
-    virtual void onRemoveOutputSet(OutputSet *set);
-    virtual void onAttach(OutputSet *set); //add this to set
-    virtual void onDetach(OutputSet *set = 0); //detatch from (all, if 0) output set(s)
     virtual bool onHanlePendingTasks();
 };
 

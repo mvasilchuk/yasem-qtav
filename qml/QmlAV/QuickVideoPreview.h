@@ -1,7 +1,6 @@
 /******************************************************************************
     QtAV:  Media play library based on Qt and FFmpeg
     Copyright (C) 2014-2015 Wang Bin <wbsecg1@gmail.com>
-    theoribeiro <theo@fictix.com.br>
 
 *   This file is part of QtAV
 
@@ -23,12 +22,21 @@
 #ifndef QTAV_QUICKVIDEOPREVIEW_H
 #define QTAV_QUICKVIDEOPREVIEW_H
 
-#include <QmlAV/QQuickItemRenderer.h>
 #include <QtAV/VideoFrameExtractor.h>
-
+#define CONFIG_FBO_ITEM (QT_VERSION >= QT_VERSION_CHECK(5, 2, 0))
+#if CONFIG_FBO_ITEM
+#include <QmlAV/QuickFBORenderer.h>
+#else
+#include <QmlAV/QQuickItemRenderer.h>
+#endif
 namespace QtAV {
-class ImageConverter;
-class QMLAV_EXPORT QuickVideoPreview : public QQuickItemRenderer
+
+class QuickVideoPreview
+#if CONFIG_FBO_ITEM
+        : public QuickFBORenderer
+#else
+        : public QQuickItemRenderer
+#endif
 {
     Q_OBJECT
     // position conflicts with QQuickItem.position
@@ -53,7 +61,6 @@ private slots:
 private:
     QUrl m_file;
     VideoFrameExtractor m_extractor;
-    ImageConverter *m_conv;
 };
 } //namespace QtAV
 #endif // QUICKVIDEOPREVIEW_H

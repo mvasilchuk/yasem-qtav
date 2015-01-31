@@ -1,6 +1,6 @@
 /******************************************************************************
     QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2012-2013 Wang Bin <wbsecg1@gmail.com>
+    Copyright (C) 2015 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -19,36 +19,14 @@
     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 ******************************************************************************/
 
+#ifndef QTAVWIDGETS_H
+#define QTAVWIDGETS_H
 
-#ifndef QTAV_IMAGECONVERTER_P_H
-#define QTAV_IMAGECONVERTER_P_H
+#include <QtAVWidgets/version.h>
+#include <QtAVWidgets/global.h>
+#include <QtAVWidgets/GraphicsItemRenderer.h>
+#include <QtAVWidgets/WidgetRenderer.h>
+//#include <QtAVWidgets/GLWidgetRenderer.h>
+#include <QtAVWidgets/GLWidgetRenderer2.h>
 
-#include "QtAV/private/AVCompat.h"
-#include <QtCore/QByteArray>
-
-namespace QtAV {
-
-class ImageConverter;
-class Q_AV_PRIVATE_EXPORT ImageConverterPrivate : public DPtrPrivate<ImageConverter>
-{
-public:
-    ImageConverterPrivate()
-        : interlaced(false)
-        , w_in(0),h_in(0)
-        , w_out(0),h_out(0)
-        , fmt_in(PIX_FMT_YUV420P)
-        , fmt_out(PIX_FMT_RGB32)
-        , brightness(0)
-        , contrast(0)
-        , saturation(0)
-    {}
-    bool interlaced;
-    int w_in, h_in, w_out, h_out;
-    int fmt_in, fmt_out;
-    int brightness, contrast, saturation;
-    QByteArray data_out;
-    AVPicture picture;
-};
-
-} //namespace QtAV
-#endif // QTAV_IMAGECONVERTER_P_H
+#endif // QTAVWIDGETS_H

@@ -1,6 +1,6 @@
 /******************************************************************************
     QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2014 Wang Bin <wbsecg1@gmail.com>
+    Copyright (C) 2014-2015 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -35,15 +35,8 @@ public:
     VideoOutputPrivate(VideoRendererId rendererId, bool force) {
         impl = VideoRendererFactory::create(rendererId);
         if (!impl && !force) {
-            const VideoRendererId vo_ids[] = {
-                VideoRendererId_OpenGLWidget, // Qt >= 5.4
-                VideoRendererId_GLWidget2,
-                VideoRendererId_GLWidget,
-                VideoRendererId_Widget,
-                0
-            };
-            for (int i = 0; vo_ids[i]; ++i) {
-                impl = VideoRendererFactory::create(vo_ids[i]);
+            foreach (VideoRendererId vid, VideoRendererFactory::registeredIds()) {
+                impl = VideoRendererFactory::create(vid);
                 if (impl && impl->widget())
                     break;
             }
@@ -83,7 +76,7 @@ public:
 
 VideoOutput::VideoOutput(QObject *parent)
     : QObject(parent)
-    , VideoRenderer(*new VideoOutputPrivate(VideoRendererId_OpenGLWidget, false))
+    , VideoRenderer(*new VideoOutputPrivate(0, false))
 {
 }
 
@@ -112,6 +105,9 @@ bool VideoOutput::receive(const VideoFrame& frame)
     d.source_aspect_ratio = frame.displayAspectRatio();
     d.impl->d_func().source_aspect_ratio = d.source_aspect_ratio;
     setInSize(frame.width(), frame.height());
+    // or simply call d.impl->receive(frame) to avoid lock here
+    QMutexLocker locker(&d.impl->dptr.pri<VideoRendererPrivate>().img_mutex);
+    Q_UNUSED(locker);
     return d.impl->receiveFrame(frame);
 }
 /*
@@ -399,39 +395,6 @@ bool VideoOutput::onUninstallFilter(Filter *filter)
     // only used internally for AVOutput
     //d.pending_uninstall_filters =
     return ret;
-}
-
-void VideoOutput::onAddOutputSet(OutputSet *set)
-{
-    if (!isAvailable())
-        return;
-    DPTR_D(VideoOutput);
-    d.impl->onAddOutputSet(set);
-}
-
-void VideoOutput::onRemoveOutputSet(OutputSet *set)
-{
-    if (!isAvailable())
-        return;
-    DPTR_D(VideoOutput);
-    d.impl->onRemoveOutputSet(set);
-}
-
-void VideoOutput::onAttach(OutputSet *set)
-{
-    if (!isAvailable())
-        return;
-    DPTR_D(VideoOutput);
-    d.impl->onAttach(set);
-}
-
-void VideoOutput::onDetach(OutputSet *set)
-{
-    if (!isAvailable())
-        return;
-    DPTR_D(VideoOutput);
-    d.impl->onDetach(set);
-    //d.output_sets = d.impl->
 }
 
 bool VideoOutput::onHanlePendingTasks()
