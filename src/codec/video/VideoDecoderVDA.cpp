@@ -19,8 +19,8 @@
     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 ******************************************************************************/
 
-#include "QtAV/VideoDecoderFFmpegHW.h"
-#include "QtAV/private/VideoDecoderFFmpegHW_p.h"
+#include "VideoDecoderFFmpegHW.h"
+#include "VideoDecoderFFmpegHW_p.h"
 #include "utils/GPUMemCopy.h"
 #include "QtAV/private/AVCompat.h"
 #include "QtAV/private/prepost.h"
@@ -252,6 +252,7 @@ VideoFrame VideoDecoderVDA::frame()
         // TODO: buffer pool and create VideoFrame when needed to avoid copy? also for other va
         frame = frame.clone();
     }
+    frame.setTimestamp(d.frame->pkt_dts);
     return frame;
 }
 
@@ -330,6 +331,7 @@ bool VideoDecoderVDAPrivate::open()
         return false;
     }
 #endif
+    // TODO: check whether VDA is in use
     return true;
 }
 

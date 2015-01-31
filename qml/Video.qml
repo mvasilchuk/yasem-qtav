@@ -62,6 +62,8 @@ import QtAV 1.4
 Item {
     id: video
 
+    property alias opengl: videoOut.opengl
+    property alias timeout: player.timeout
     property alias subtitle: subtitle
     property alias subtitleText: text_sub // not for ass.
     /*** Properties of VideoOutput ***/

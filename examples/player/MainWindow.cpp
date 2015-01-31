@@ -173,6 +173,8 @@ void MainWindow::initPlayer()
     connect(mpVideoEQ, SIGNAL(hueChanegd(int)), this, SLOT(onHueChanged(int)));
     connect(mpVideoEQ, SIGNAL(saturationChanged(int)), this, SLOT(onSaturationChanged(int)));
 
+    connect(mpCaptureBtn, SIGNAL(clicked()), mpPlayer->videoCapture(), SLOT(request()));
+
     emit ready(); //emit this signal after connection. otherwise the slots may not be called for the first time
 }
 
@@ -381,6 +383,22 @@ void MainWindow::setupUi()
 
     mpMenu->addSeparator();
 
+    subMenu = new ClickableMenu(tr("Clock"));
+    mpMenu->addMenu(subMenu);
+    QActionGroup *ag = new QActionGroup(subMenu);
+    ag->setExclusive(true);
+    connect(subMenu, SIGNAL(triggered(QAction*)), SLOT(changeClockType(QAction*)));
+    subMenu->addAction(tr("Auto"))->setData(-1);
+    subMenu->addAction(tr("Audio"))->setData(AVClock::AudioClock);
+    subMenu->addAction(tr("Video"))->setData(AVClock::VideoClock);
+    foreach(QAction* action, subMenu->actions()) {
+        action->setActionGroup(ag);
+        action->setCheckable(true);
+    }
+    QAction *autoClockAction = subMenu->actions().at(0);
+    autoClockAction->setChecked(true);
+    autoClockAction->setToolTip(tr("Take effect in next playback"));
+
     subMenu = new ClickableMenu(tr("Subtitle"));
     mpMenu->addMenu(subMenu);
     QAction *act = subMenu->addAction(tr("Enable"));
@@ -429,7 +447,8 @@ void MainWindow::setupUi()
     subMenu = new ClickableMenu(tr("Audio track"));
     mpMenu->addMenu(subMenu);
     mpAudioTrackMenu = subMenu;
-    connect(mpAudioTrackMenu, SIGNAL(triggered(QAction*)), SLOT(changeAudioTrack(QAction*)));
+    connect(subMenu, SIGNAL(triggered(QAction*)), SLOT(changeAudioTrack(QAction*)));
+
     subMenu = new ClickableMenu(tr("Channel"));
     mpMenu->addMenu(subMenu);
     mpChannelMenu = subMenu;
@@ -439,7 +458,10 @@ void MainWindow::setupUi()
     subMenu->addAction(tr("Mono (center)"))->setData(AudioFormat::ChannelLayout_Center);
     subMenu->addAction(tr("Left"))->setData(AudioFormat::ChannelLayout_Left);
     subMenu->addAction(tr("Right"))->setData(AudioFormat::ChannelLayout_Right);
+    ag = new QActionGroup(subMenu);
+    ag->setExclusive(true);
     foreach(QAction* action, subMenu->actions()) {
+        ag->addAction(action);
         action->setCheckable(true);
     }
 
@@ -519,7 +541,6 @@ void MainWindow::setupUi()
     connect(pSpeedBox, SIGNAL(valueChanged(double)), SLOT(onSpinBoxChanged(double)));
     connect(mpOpenBtn, SIGNAL(clicked()), SLOT(openFile()));
     connect(mpPlayPauseBtn, SIGNAL(clicked()), SLOT(togglePlayPause()));
-    connect(mpCaptureBtn, SIGNAL(clicked()), this, SLOT(capture()));
     connect(mpInfoBtn, SIGNAL(clicked()), SLOT(showInfo()));
     //valueChanged can be triggered by non-mouse event
     //TODO: connect sliderMoved(int) to preview(int)
@@ -683,6 +704,7 @@ void MainWindow::play(const QString &name)
         mHasPendingPlay = true;
         return;
     }
+    mTitle = mFile;
     if (!mFile.contains("://") || mFile.startsWith("file://")) {
         mTitle = QFileInfo(mFile).fileName();
     }
@@ -702,6 +724,11 @@ void MainWindow::play(const QString &name)
     mpHistory->remove(mFile);
     mpHistory->insertItemAt(item, 0);
     mpPlayer->play(name);
+}
+
+void MainWindow::play(const QUrl &url)
+{
+    play(QUrl::fromPercentEncoding(url.toEncoded()));
 }
 
 void MainWindow::setVideoDecoderNames(const QStringList &vd)
@@ -840,11 +867,6 @@ void MainWindow::seekToMSec(int msec)
 void MainWindow::seek()
 {
     mpPlayer->seek((qint64)mpTimeSlider->value());
-}
-
-void MainWindow::capture()
-{
-    mpPlayer->captureVideo();
 }
 
 void MainWindow::showHideVolumeBar()
@@ -1300,11 +1322,11 @@ void MainWindow::onCaptureConfigChanged()
 {
     mpPlayer->videoCapture()->setCaptureDir(Config::instance().captureDir());
     mpPlayer->videoCapture()->setQuality(Config::instance().captureQuality());
-    if (Config::instance().captureFormat().toLower() == "yuv") {
-        mpPlayer->videoCapture()->setRaw(true);
+    if (Config::instance().captureFormat().toLower() == "original") {
+        mpPlayer->videoCapture()->setOriginalFormat(true);
     } else {
-        mpPlayer->videoCapture()->setRaw(false);
-        mpPlayer->videoCapture()->setFormat(Config::instance().captureFormat());
+        mpPlayer->videoCapture()->setOriginalFormat(false);
+        mpPlayer->videoCapture()->setSaveFormat(Config::instance().captureFormat());
     }
     mpCaptureBtn->setToolTip(tr("Capture video frame") + "\n" + tr("Save to") + ": " + mpPlayer->videoCapture()->captureDir()
                              + "\n" + tr("Format") + ": " + Config::instance().captureFormat());
@@ -1382,6 +1404,19 @@ void MainWindow::setSubtitleEngine(const QString &value)
     if (!box)
         return;
     mpSubtitle->setEngines(QStringList() << box->itemData(box->currentIndex()).toString());
+}
+
+void MainWindow::changeClockType(QAction *action)
+{
+    action->setChecked(true);
+    int value = action->data().toInt();
+    if (value < 0) {
+        mpPlayer->masterClock()->setClockAuto(true);
+        // TODO: guess clock type
+        return;
+    }
+    mpPlayer->masterClock()->setClockAuto(false);
+    mpPlayer->masterClock()->setClockType(AVClock::ClockType(value));
 }
 
 void MainWindow::workaroundRendererSize()

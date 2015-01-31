@@ -43,6 +43,7 @@ QQuickItemRenderer::QQuickItemRenderer(QQuickItem *parent) :
 {
     Q_UNUSED(parent);
     setFlag(QQuickItem::ItemHasContents, true);
+    connect(this, SIGNAL(windowChanged(QQuickWindow*)), SLOT(handleWindowChange(QQuickWindow*)));
 }
 
 VideoRendererId QQuickItemRenderer::id() const
@@ -81,8 +82,6 @@ void QQuickItemRenderer::geometryChanged(const QRectF &newGeometry, const QRectF
 bool QQuickItemRenderer::receiveFrame(const VideoFrame &frame)
 {
     DPTR_D(QQuickItemRenderer);
-    QMutexLocker locker(&d.img_mutex);
-    Q_UNUSED(locker);
     d.video_frame = frame;
     if (!isOpenGL()) {
         d.image = QImage((uchar*)frame.bits(), frame.width(), frame.height(), frame.bytesPerLine(), frame.imageFormat());
@@ -211,6 +210,26 @@ QSGNode *QQuickItemRenderer::updatePaintNode(QSGNode *node, QQuickItem::UpdatePa
     handlePaintEvent();
     d.node = 0;
     return node;
+}
+
+void QQuickItemRenderer::handleWindowChange(QQuickWindow *win)
+{
+    disconnect(this, SLOT(beforeRendering()));
+    disconnect(this, SLOT(afterRendering()));
+    if (!win)
+        return;
+    connect(win, SIGNAL(beforeRendering()), this, SLOT(beforeRendering()), Qt::DirectConnection);
+    connect(win, SIGNAL(afterRendering()), this, SLOT(afterRendering()), Qt::DirectConnection);
+}
+
+void QQuickItemRenderer::beforeRendering()
+{
+    d_func().img_mutex.lock();
+}
+
+void QQuickItemRenderer::afterRendering()
+{
+    d_func().img_mutex.unlock();
 }
 
 bool QQuickItemRenderer::onSetRegionOfInterest(const QRectF &roi)

@@ -21,7 +21,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <QApplication>
-
 #include <QtDebug>
 #include <QtCore/QDir>
 #include <QMessageBox>
@@ -91,6 +90,7 @@ int main(int argc, char *argv[])
     }
 
     QApplication a(argc, argv);
+    set_opengl_backend(options.option("gl").value().toString(), a.arguments().first());
     load_qm(QStringList() << "player", options.value("language").toString());
 
     sLogfile = fopen(QString(qApp->applicationDirPath() + "/log.txt").toUtf8().constData(), "w+");
@@ -100,6 +100,7 @@ int main(int argc, char *argv[])
     }
     qInstallMessageHandler(Logger);
 
+    qDebug() <<a.arguments();
     QOption op = options.option("vo");
     QString vo = op.value().toString();
     if (!op.isSet()) {
@@ -146,6 +147,9 @@ int main(int argc, char *argv[])
     renderer->setOutAspectRatioMode(VideoRenderer::VideoAspectRatio);
 
     MainWindow window;
+    AppEventFilter ae(&window);
+    qApp->installEventFilter(&ae);
+
     window.show();
     window.setWindowTitle(title);
     window.setRenderer(renderer);
@@ -181,6 +185,7 @@ int main(int argc, char *argv[])
         setFFmpegLogHandler(0);
     op = options.option("file");
     if (op.isSet()) {
+        qDebug() << "-f set: " << op.value().toString();
         window.play(op.value().toString());
     } else {
         if (argc > 1 && !a.arguments().last().startsWith('-') && !a.arguments().at(argc-2).startsWith('-'))

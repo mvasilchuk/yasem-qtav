@@ -22,6 +22,7 @@ int main(int argc, char *argv[])
     }
 
     QGuiApplication app(argc, argv);
+    set_opengl_backend(options.option("gl").value().toString(), app.arguments().first());
     load_qm(QStringList() << "QMLPlayer", options.value("language").toString());
     QtQuick2ApplicationViewer viewer;
     viewer.engine()->rootContext()->setContextProperty("PlayerConfig", &Config::instance());
@@ -39,6 +40,9 @@ int main(int argc, char *argv[])
         r = 1.0;
 #endif
     float sr = options.value("scale").toFloat();
+#if defined(Q_OS_ANDROID)
+    sr = r;
+#endif
     if (qFuzzyIsNull(sr))
         sr = r;
     viewer.engine()->rootContext()->setContextProperty("scaleRatio", sr);
@@ -74,9 +78,12 @@ int main(int argc, char *argv[])
     json.replace("\\", "/"); //FIXME
     QMetaObject::invokeMethod(viewer.rootObject(), "init", Q_ARG(QVariant, json));
 //#else
+    QObject *player = viewer.rootObject()->findChild<QObject*>("player");
+    if (player) {
+        AppEventFilter *ae = new AppEventFilter(player, player);
+        qApp->installEventFilter(ae);
+    }
     if (app.arguments().size() > 1) {
-        qDebug("arguments > 1");
-        QObject *player = viewer.rootObject()->findChild<QObject*>("player");
         QString file = options.value("file").toString();
         if (file.isEmpty()) {
             if (argc > 1 && !app.arguments().last().startsWith('-') && !app.arguments().at(argc-2).startsWith('-'))

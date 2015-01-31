@@ -30,7 +30,7 @@ RESOURCES += QtAV.qrc \
 
 !rc_file {
     RC_ICONS = QtAV.ico
-    QMAKE_TARGET_COMPANY = "Shanghai University->S3 Graphics | wbsecg1@gmail.com"
+    QMAKE_TARGET_COMPANY = "Shanghai University->S3 Graphics->Deepin | wbsecg1@gmail.com"
     QMAKE_TARGET_DESCRIPTION = "Multimedia playback framework based on Qt & FFmpeg. http://www.qtav.org"
     QMAKE_TARGET_COPYRIGHT = "Copyright (C) 2012-2014 WangBin, wbsecg1@gmail.com"
     QMAKE_TARGET_PRODUCT = "QtAV"
@@ -73,12 +73,6 @@ sse2|config_sse2|contains(TARGET_ARCH_SUB, sse2) {
   }
 }
 
-win32 {
-    CONFIG += config_dsound
-#dynamicgl: __impl__GetDC __impl_ReleaseDC __impl_GetDesktopWindow
-    LIBS += -luser32 -lgdi32
-}
-
 *msvc* {
 #link FFmpeg and portaudio which are built by gcc need /SAFESEH:NO
     #QMAKE_LFLAGS += /SAFESEH:NO
@@ -87,7 +81,7 @@ win32 {
 #UINT64_C: C99 math features, need -D__STDC_CONSTANT_MACROS in CXXFLAGS
 DEFINES += __STDC_CONSTANT_MACROS
 android: CONFIG += config_opensl
-LIBS += -lavcodec -lavformat -lavutil -lswscale
+win32: CONFIG += config_dsound
 
 exists($$PROJECTROOT/contrib/libchardet/libchardet.pri) {
   include($$PROJECTROOT/contrib/libchardet/libchardet.pri)
@@ -102,10 +96,6 @@ exists($$PROJECTROOT/contrib/capi/capi.pri) {
 } else {
   warning("contrib/capi is missing. run 'git submodule update --init' first")
 }
-config_avfilter {
-    DEFINES += QTAV_HAVE_AVFILTER=1
-    LIBS += -lavfilter
-}
 config_swresample {
     DEFINES += QTAV_HAVE_SWRESAMPLE=1
     SOURCES += AudioResamplerFF.cpp
@@ -116,9 +106,19 @@ config_avresample {
     SOURCES += AudioResamplerLibav.cpp
     LIBS += -lavresample
 }
-config_avdevice {
+config_avdevice { #may depends on avfilter
     DEFINES += QTAV_HAVE_AVDEVICE=1
-    LIBS += -lavdevice
+    LIBS *= -lavdevice
+    static_ffmpeg: mac:!ios { # static ffmpeg
+      LIBS += -framework Foundation -framework QTKit -framework CoreMedia -framework QuartzCore -framework CoreGraphics \
+              -framework AVFoundation
+    # assume avdevice targets to the same version as Qt and always >= 10.6
+      !isEqual(QMAKE_MACOSX_DEPLOYMENT_TARGET, 10.6): LIBS += -framework AVFoundation
+    }
+}
+config_avfilter {
+    DEFINES += QTAV_HAVE_AVFILTER=1
+    LIBS += -lavfilter
 }
 config_ipp {
     DEFINES += QTAV_HAVE_IPP=1
@@ -153,6 +153,11 @@ config_openal {
     blackberry: LIBS += -lOpenAL
     mac: LIBS += -framework OpenAL
     mac: DEFINES += HEADER_OPENAL_PREFIX
+    static_openal {
+      DEFINES += AL_LIBTYPE_STATIC
+      *linux*:!android: LIBS += -lasound
+      win32: LIBS += -lwinmm
+    }
 }
 config_opensl {
     SOURCES += output/audio/AudioOutputOpenSL.cpp
@@ -290,6 +295,24 @@ config_libass {
   SOURCES *= subtitle/SubtitleProcessorLibASS.cpp
 }
 
+# mac is -FQTDIR we need -LQTDIR
+LIBS *= -L$$[QT_INSTALL_LIBS] -lavcodec -lavformat -lswscale -lavutil
+win32 {
+#dynamicgl: __impl__GetDC __impl_ReleaseDC __impl_GetDesktopWindow
+    LIBS += -luser32 -lgdi32
+}
+# compat with old system
+# use old libva.so to link against
+glibc_compat: *linux*: LIBS += -lrt  # do not use clock_gettime in libc, GLIBC_2.17 is not available on old system
+static_ffmpeg {
+# libs needed by mac static ffmpeg. corefoundation: vda, avdevice
+  mac: LIBS += -liconv -lbz2 -lz -framework CoreFoundation
+  win32: LIBS *= -lws2_32 -lstrmiids -lvfw32 -luuid
+  *g++* {
+    LIBS += -lz
+    QMAKE_LFLAGS += -Wl,-Bsymbolic #link to static lib, see http://ffmpeg.org/platform.html
+  }
+}
 SOURCES += \
     AVCompat.cpp \
     QtAV_Global.cpp \
@@ -341,6 +364,7 @@ SOURCES += \
     Statistics.cpp \
     codec/video/VideoDecoder.cpp \
     codec/video/VideoDecoderTypes.cpp \
+    codec/video/VideoDecoderFFmpegBase.cpp \
     codec/video/VideoDecoderFFmpeg.cpp \
     codec/video/VideoDecoderFFmpegHW.cpp \
     VideoThread.cpp \
@@ -380,7 +404,6 @@ SDK_HEADERS *= \
     QtAV/AVClock.h \
     QtAV/VideoDecoder.h \
     QtAV/VideoDecoderTypes.h \
-    QtAV/VideoDecoderFFmpegHW.h \
     QtAV/VideoFormat.h \
     QtAV/VideoFrame.h \
     QtAV/VideoFrameExtractor.h \
@@ -409,7 +432,6 @@ SDK_PRIVATE_HEADERS *= \
     QtAV/private/ImageConverter_p.h \
     QtAV/private/VideoShader_p.h \
     QtAV/private/VideoDecoder_p.h \
-    QtAV/private/VideoDecoderFFmpegHW_p.h \
     QtAV/private/VideoRenderer_p.h \
     QtAV/private/QPainterRenderer_p.h
 
@@ -424,6 +446,9 @@ HEADERS *= \
     AVThread_p.h \
     AudioThread.h \
     VideoThread.h \
+    codec/video/VideoDecoderFFmpegBase.h \
+    codec/video/VideoDecoderFFmpegHW.h \
+    codec/video/VideoDecoderFFmpegHW_p.h \
     filter/FilterManager.h \
     input/QIODeviceInput.h \
     subtitle/CharsetDetector.h \

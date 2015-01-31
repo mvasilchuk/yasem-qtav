@@ -48,7 +48,7 @@ NAME = common
 }
 eval(LIB$$upper($$NAME)_PRI_INCLUDED = 1)
 
-LIB_VERSION = 1.4.1 #0.x.y may be wrong for dll
+LIB_VERSION = $$QTAV_VERSION #0.x.y may be wrong for dll
 ios: STATICLINK=1
 isEmpty(STATICLINK): STATICLINK = 0  #1 or 0. use static lib or not
 
@@ -158,3 +158,18 @@ unset(PROJECT_SRCPATH)
 unset(PROJECT_LIBDIR)
 unset(PROJECT_TARGETNAME)
 
+QMAKE_INFO_PLIST = $$PWD/Info.plist
+
+defineTest(genRC) {
+    RC_ICONS = $$PROJECTROOT/src/QtAV.ico
+    QMAKE_TARGET_COMPANY = "Shanghai University->S3 Graphics->Deepin | wbsecg1@gmail.com"
+    QMAKE_TARGET_DESCRIPTION = "Multimedia playback framework based on Qt & FFmpeg. http://www.qtav.org"
+    QMAKE_TARGET_COPYRIGHT = "Copyright (C) 2012-2014 WangBin, wbsecg1@gmail.com"
+    QMAKE_TARGET_PRODUCT = "QtAV $$1"
+    export(RC_ICONS)
+    export(QMAKE_TARGET_COMPANY)
+    export(QMAKE_TARGET_DESCRIPTION)
+    export(QMAKE_TARGET_COPYRIGHT)
+    export(QMAKE_TARGET_PRODUCT)
+    return(true)
+}

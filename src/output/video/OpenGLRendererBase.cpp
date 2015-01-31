@@ -78,8 +78,6 @@ bool OpenGLRendererBase::isSupported(VideoFormat::PixelFormat pixfmt) const
 bool OpenGLRendererBase::receiveFrame(const VideoFrame& frame)
 {
     DPTR_D(OpenGLRendererBase);
-    QMutexLocker locker(&d.img_mutex);
-    Q_UNUSED(locker);
     d.video_frame = frame;
 
     d.glv.setCurrentFrame(frame);
@@ -118,7 +116,6 @@ void OpenGLRendererBase::onInitializeGL()
     bool hasGLSL = QOpenGLShaderProgram::hasOpenGLShaderPrograms();
     qDebug("OpenGL version: %d.%d  hasGLSL: %d", ctx->format().majorVersion(), ctx->format().minorVersion(), hasGLSL);
     initializeOpenGLFunctions();
-    glEnable(GL_TEXTURE_2D);
     glDisable(GL_DEPTH_TEST);
     glClearColor(0.0, 0.0, 0.0, 0.0);
 }

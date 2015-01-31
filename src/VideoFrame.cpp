@@ -71,6 +71,9 @@ public:
         planes.resize(format.planeCount());
         line_sizes.resize(format.planeCount());
         textures.resize(format.planeCount());
+        planes.reserve(format.planeCount());
+        line_sizes.reserve(format.planeCount());
+        textures.reserve(format.planeCount());
     }
     ~VideoFramePrivate() {}
     bool convertTo(const VideoFormat& fmt) {
@@ -103,7 +106,9 @@ public:
         planes.resize(format.planeCount());
         line_sizes.resize(format.planeCount());
         textures.resize(format.planeCount());
-
+        planes.reserve(format.planeCount());
+        line_sizes.reserve(format.planeCount());
+        textures.reserve(format.planeCount());
         return true;
     }
     bool convertTo(const VideoFormat& fmt, const QSizeF &dstSize, const QRectF &roi) {
@@ -123,7 +128,9 @@ public:
         planes.resize(fmt.planeCount());
         line_sizes.resize(fmt.planeCount());
         textures.resize(fmt.planeCount());
-
+        planes.reserve(format.planeCount());
+        line_sizes.reserve(format.planeCount());
+        textures.reserve(format.planeCount());
         return false;
     }
 
@@ -206,6 +213,16 @@ VideoFrame VideoFrame::clone() const
     Q_D(const VideoFrame);
     if (!d->format.isValid())
         return VideoFrame();
+    // data may be not set (ff decoder)
+    if (d->planes.isEmpty() || !d->planes.at(0)) {//d->data.size() < width()*height()) { // at least width*height
+        // maybe in gpu memory, then bits() is not set
+        qDebug("frame data not valid. size: %d", d->data.size());
+        VideoFrame f(width(), height(), d->format);
+        f.d_ptr->metadata = d->metadata; // need metadata?
+        f.setTimestamp(d->timestamp);
+        f.setDisplayAspectRatio(d->displayAspectRatio);
+        return f;
+    }
     int bytes = 0;
     for (int i = 0; i < d->format.planeCount(); ++i) {
         bytes += bytesPerLine(i)*planeHeight(i);
@@ -220,6 +237,8 @@ VideoFrame VideoFrame::clone() const
         memcpy(dst, bits(i), plane_size);
         dst += plane_size;
     }
+    f.d_ptr->metadata = d->metadata; // need metadata?
+    f.setTimestamp(d->timestamp);
     f.setDisplayAspectRatio(d->displayAspectRatio);
     //f.setImageConverter(d->conv);
     return f;

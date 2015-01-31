@@ -101,11 +101,7 @@ bool GraphicsItemRenderer::receiveFrame(const VideoFrame& frame)
 {
     DPTR_D(GraphicsItemRenderer);
     if (isOpenGL()) {
-        {
-            QMutexLocker locker(&d.img_mutex);
-            Q_UNUSED(locker);
-            d.video_frame = frame;
-        }
+        d.video_frame = frame;
         if (d.checkGL())
             d.glv.setCurrentFrame(frame);
     } else {
@@ -207,6 +203,7 @@ bool GraphicsItemRenderer::onSetBrightness(qreal b)
     if (!isOpenGL())
         return false;
     d_func().glv.setBrightness(b);
+    update();
     return true;
 }
 
@@ -215,6 +212,7 @@ bool GraphicsItemRenderer::onSetContrast(qreal c)
     if (!isOpenGL())
         return false;
     d_func().glv.setContrast(c);
+    update();
     return true;
 }
 
@@ -223,6 +221,7 @@ bool GraphicsItemRenderer::onSetHue(qreal h)
     if (!isOpenGL())
         return false;
     d_func().glv.setHue(h);
+    update();
     return true;
 }
 
@@ -231,6 +230,7 @@ bool GraphicsItemRenderer::onSetSaturation(qreal s)
     if (!isOpenGL())
         return false;
     d_func().glv.setSaturation(s);
+    update();
     return true;
 }
 //GraphicsWidget will lose focus forever if focus out. Why?

@@ -57,8 +57,9 @@ Q_DECLARE_METATYPE(QtAV::AVInput*)
 #define EOF_ISSUE_SOLVED 0
 namespace QtAV {
 
-static const int kPosistionCheckMS = 500;
 static const qint64 kSeekMS = 10000;
+
+Q_GLOBAL_STATIC(QThreadPool, loaderThreadPool)
 
 /// Supported input protocols. A static string list
 const QStringList& AVPlayer::supportedProtocols()
@@ -79,7 +80,7 @@ AVPlayer::AVPlayer(QObject *parent) :
      */
     connect(qApp, SIGNAL(aboutToQuit()), this, SLOT(aboutToQuitApp()));
     //d->clock->setClockType(AVClock::ExternalClock);
-    connect(&d->demuxer, SIGNAL(started()), d->clock, SLOT(start()));
+    connect(&d->demuxer, SIGNAL(started()), masterClock(), SLOT(start()));
     connect(&d->demuxer, SIGNAL(error(QtAV::AVError)), this, SIGNAL(error(QtAV::AVError)));
     connect(&d->demuxer, SIGNAL(mediaStatusChanged(QtAV::MediaStatus)), this, SIGNAL(mediaStatusChanged(QtAV::MediaStatus)));
     connect(&d->demuxer, SIGNAL(loaded()), this, SIGNAL(loaded()));
@@ -440,12 +441,6 @@ bool AVPlayer::captureVideo()
 {
     if (!d->vcapture || !d->vthread)
         return false;
-    if (isPaused()) {
-        QString cap_name = QFileInfo(file()).completeBaseName();
-        d->vcapture->setCaptureName(cap_name + "_" + QString::number(masterClock()->value(), 'f', 3));
-        d->vcapture->start();
-        return true;
-    }
     d->vcapture->request();
     return true;
 }
@@ -573,7 +568,7 @@ bool AVPlayer::load(bool reload)
                 AVPlayer* m_player;
             };
             // TODO: thread pool has a max thread limit
-            QThreadPool::globalInstance()->start(new LoadWorker(this));
+            loaderThreadPool()->start(new LoadWorker(this));
             return true;
         }
         loadInternal();
@@ -730,6 +725,7 @@ qint64 AVPlayer::startPosition() const
 
 void AVPlayer::setStartPosition(qint64 pos)
 {
+    // default stopPosition() is int64 max, so set start position before media loaded is ok
     if (pos > stopPosition() && stopPosition() > 0) {
         qWarning("start position too large (%lld > %lld). ignore", pos, stopPosition());
         return;
@@ -997,7 +993,24 @@ void AVPlayer::playInternal()
         return;
         //return false;
     }
-
+    // setup clock before avthread.start() becuase avthreads use clock. after avthreads setup because of ao check
+    if (d->last_position > 0) {//start_last) {
+        masterClock()->pause(false); //external clock
+    } else {
+        masterClock()->reset();
+    }
+    if (masterClock()->isClockAuto()) {
+        qDebug("auto select clock: audio > external");
+        if (!d->demuxer.audioCodecContext() || !d->ao) {
+            masterClock()->setClockType(AVClock::ExternalClock);
+            qDebug("No audio found or audio not supported. Using ExternalClock.");
+        } else {
+            qDebug("Using AudioClock");
+            masterClock()->setClockType(AVClock::AudioClock);
+        }
+        masterClock()->setInitialValue((double)absoluteMediaStartPosition()/1000.0);
+        qDebug("Clock initial value: %f", masterClock()->value());
+    }
     // from previous play()
     if (d->demuxer.audioCodecContext() && d->athread) {
         qDebug("Starting audio thread...");
@@ -1016,26 +1029,9 @@ void AVPlayer::playInternal()
             d->demuxer.seek((qint64)(startPosition()));
     }
     d->read_thread->start();
-    if (d->last_position > 0) {//start_last) {
-        masterClock()->pause(false); //external clock
-    } else {
-        masterClock()->reset();
-    }
-    if (masterClock()->isClockAuto()) {
-        qDebug("auto select clock: audio > external");
-        if (!d->demuxer.audioCodecContext() || !d->ao) {
-            qWarning("No audio found or audio not supported. Using ExternalClock");
-            masterClock()->setClockType(AVClock::ExternalClock);
-            masterClock()->setInitialValue(mediaStartPositionF());
-        } else {
-            qDebug("Using AudioClock");
-            masterClock()->setClockType(AVClock::AudioClock);
-            //masterClock()->setInitialValue(0);
-        }
-    }
 
     if (d->timer_id < 0) {
-        //d->timer_id = startTimer(kPosistionCheckMS); //may fail if not in this thread
+        //d->timer_id = startNotifyTimer(); //may fail if not in this thread
         QMetaObject::invokeMethod(this, "startNotifyTimer", Qt::AutoConnection);
     }
 // ffplay does not seek to stream's start position. usually it's 0, maybe < 1. seeking will result in a non-key frame position and it's bad.
@@ -1051,6 +1047,7 @@ void AVPlayer::stopFromDemuxerThread()
 {
     qDebug("demuxer thread emit finished.");
     if (currentRepeat() >= repeat() && repeat() >= 0) {
+        masterClock()->reset();
         stopNotifyTimer();
         d->start_position = 0;
         d->stop_position = kInvalidPosition; // already stopped. so not 0 but invalid. 0 can stop the playback in timerEvent
@@ -1076,11 +1073,13 @@ void AVPlayer::aboutToQuitApp()
         pause(false); // may be paused. then aboutToQuitApp will not finish
         stop();
     }
+    d->demuxer.setInterruptStatus(true);
+    loaderThreadPool()->waitForDone();
 }
 
 void AVPlayer::startNotifyTimer()
 {
-    d->timer_id = startTimer(kPosistionCheckMS);
+    d->timer_id = startTimer(d->notify_interval);
 }
 
 void AVPlayer::stopNotifyTimer()
@@ -1163,12 +1162,21 @@ void AVPlayer::timerEvent(QTimerEvent *te)
             emit positionChanged(t);
             return;
         }
+        // FIXME: totally wrong if seek_target - keyframe_seek > 1000
         if (d->seeking && t >= d->seek_target + 1000) {
             d->seeking = false;
             d->seek_target = 0;
         }
+        if (t < startPosition()) {
+            //qDebug("position %lld < startPosition %lld", t, startPosition());
+            // or set clock initial value to get correct t
+            if (startPosition() != mediaStartPosition()) {
+                setPosition(startPosition());
+                return;
+            }
+        }
         if (t <= stopPosition()) {
-            if (!d->seeking) {
+            if (!d->seeking) { // FIXME
                 emit positionChanged(t);
             }
             return;
