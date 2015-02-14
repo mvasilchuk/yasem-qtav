@@ -19,7 +19,7 @@
     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 ******************************************************************************/
 
-import QtQuick 2.1
+import QtQuick 2.0
 import QtQuick.Dialogs 1.0
 //import QtMultimedia 5.0
 import QtAV 1.5
@@ -77,6 +77,7 @@ Rectangle {
         videoCodecPriority: PlayerConfig.decoderPriorityNames
         onPositionChanged: control.setPlayingProgress(position/duration)
         onPlaying: {
+            control.mediaSource = player.source
             control.duration = duration
             control.setPlayingState()
             if (!pageLoader.item)
@@ -96,7 +97,6 @@ Rectangle {
             }
         }
     }
-
     Subtitle {
         id: subtitle
         player: player
@@ -177,9 +177,18 @@ Rectangle {
         mediaSource: player.source
         duration: player.duration
 
-        onSeek: player.seek(ms)
-        onSeekForward: player.seek(player.position + ms)
-        onSeekBackward: player.seek(player.position - ms)
+        onSeek: {
+            player.fastSeek = false
+            player.seek(ms)
+        }
+        onSeekForward: {
+            player.fastSeek = false
+            player.seek(player.position + ms)
+        }
+        onSeekBackward: {
+            player.fastSeek = false
+            player.seek(player.position - ms)
+        }
         onPlay: player.play()
         onStop: player.stop()
         onTogglePause: {
@@ -204,9 +213,11 @@ Rectangle {
                 player.muted = !player.muted
                 break
             case Qt.Key_Right:
+                player.fastSeek = event.isAutoRepeat
                 player.seek(player.position + 10000)
                 break
             case Qt.Key_Left:
+                player.fastSeek = event.isAutoRepeat
                 player.seek(player.position - 10000)
                 break
             case Qt.Key_Up:
@@ -255,6 +266,16 @@ Rectangle {
             }
         }
     }
+    DropArea {
+        anchors.fill: root
+        onEntered: {
+            if (!drag.hasUrls)
+                return;
+            console.log(drag.urls)
+            player.source = drag.urls[0]
+        }
+    }
+
     Item {
         id: configPage
         anchors.right: configPanel.left

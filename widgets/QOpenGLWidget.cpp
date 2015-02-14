@@ -21,6 +21,12 @@
 #include "QtAVWidgets/QOpenGLWidget.h"
 #include <QResizeEvent>
 #include <QWindow>
+// for dynamicgl. qglfunctions before qt5.3 does not have portable gl functions
+#ifdef QT_OPENGL_DYNAMIC
+#define DYGL(glFunc) QOpenGLContext::currentContext()->functions()->glFunc
+#else
+#define DYGL(glFunc) glFunc
+#endif
 
 namespace QtAV {
 
@@ -52,7 +58,7 @@ QOpenGLWidget::QOpenGLWidget(QWidget *parent, Qt::WindowFlags f)
     // WA_PaintOnScreen: QWidget::paintEngine: Should no longer be called.  This flag is only supported on X11 and it disables double buffering
     //setAttribute(Qt::WA_PaintOnScreen); // enforce native window, so windowHandle() is not null
     setAttribute(Qt::WA_NoSystemBackground);
-    setAutoFillBackground(true); // for compatibility
+    //setAutoFillBackground(true); // for compatibility
     // FIXME: why setSurfaceType crash?
     //windowHandle()->setSurfaceType(QWindow::OpenGLSurface);
 }
@@ -174,8 +180,12 @@ void QOpenGLWidget::initialize()
         return;
     }
     m_paintDevice = new QOpenGLWidgetPaintDevice(this);
+#if QT_VERSION >= QT_VERSION_CHECK(5, 1, 0)
     m_paintDevice->setSize(size() * devicePixelRatio());
     m_paintDevice->setDevicePixelRatio(devicePixelRatio());
+#else
+    m_paintDevice->setSize(size());
+#endif
     m_initialized = true;
     initializeGL();
 }
@@ -195,9 +205,12 @@ void QOpenGLWidget::render()
 
 void QOpenGLWidget::invokeUserPaint()
 {
-    QOpenGLFunctions *f = QOpenGLContext::currentContext()->functions();
-    f->glViewport(0, 0, width()*devicePixelRatio(), height()*devicePixelRatio());
+#if QT_VERSION >= QT_VERSION_CHECK(5, 1 , 0)
+    DYGL(glViewport(0, 0, width()*devicePixelRatio(), height()*devicePixelRatio()));
+#else
+    DYGL(glViewport(0, 0, width(), height()));
+#endif
     paintGL();
-    f->glFlush();
+    DYGL(glFlush());
 }
 } //namespace QtAV

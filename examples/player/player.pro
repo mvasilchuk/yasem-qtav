@@ -62,7 +62,6 @@ HEADERS += \
     config/AVFilterConfigPage.h \
     filters/AVFilterSubtitle.h
 
-
 unix:!android:!mac {
 #debian
 player_bins = libcommon.so.* player QMLPlayer

@@ -22,7 +22,6 @@
 #include "QtAV/AVDemuxer.h"
 #include "QtAV/AVInput.h"
 #include "QtAV/private/AVCompat.h"
-#include "input/QIODeviceInput.h"
 #include <QtCore/QStringList>
 #if QT_VERSION >= QT_VERSION_CHECK(4, 7, 0)
 #include <QtCore/QElapsedTimer>
@@ -32,6 +31,9 @@ typedef QTime QElapsedTimer;
 #endif
 #include "utils/Logger.h"
 
+#if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
+Q_DECLARE_METATYPE(QIODevice*)
+#endif
 namespace QtAV {
 static const char kFileScheme[] = "file:";
 #define CHAR_COUNT(s) (sizeof(s) - 1) // tail '\0'
@@ -199,7 +201,7 @@ public:
         , input_format(0)
         , input(0)
         , seek_unit(SeekByTime)
-        , seek_target(SeekTarget_AccurateFrame)
+        , seek_type(AccurateSeek)
         , dict(0)
         , interrupt_hanlder(0)
     {}
@@ -278,8 +280,8 @@ public:
     AVInputFormat *input_format;
     AVInput *input;
 
-    AVDemuxer::SeekUnit seek_unit;
-    AVDemuxer::SeekTarget seek_target;
+    SeekUnit seek_unit;
+    SeekType seek_type;
 
     AVDictionary *dict;
     QVariantHash options;
@@ -428,19 +430,19 @@ void AVDemuxer::setSeekUnit(SeekUnit unit)
     d->seek_unit = unit;
 }
 
-AVDemuxer::SeekUnit AVDemuxer::seekUnit() const
+SeekUnit AVDemuxer::seekUnit() const
 {
     return d->seek_unit;
 }
 
-void AVDemuxer::setSeekTarget(SeekTarget target)
+void AVDemuxer::setSeekType(SeekType target)
 {
-    d->seek_target = target;
+    d->seek_type = target;
 }
 
-AVDemuxer::SeekTarget AVDemuxer::seekTarget() const
+SeekType AVDemuxer::seekType() const
 {
-    return d->seek_target;
+    return d->seek_type;
 }
 
 //TODO: seek by byte
@@ -463,7 +465,7 @@ bool AVDemuxer::seek(qint64 pos)
 #else
     //TODO: d->pkt.pts may be 0, compute manually.
 
-    bool backward = d->seek_target == SeekTarget_AccurateFrame || upos <= (int64_t)(d->pkt.pts*AV_TIME_BASE);
+    bool backward = d->seek_type == AccurateSeek || upos <= (int64_t)(d->pkt.pts*AV_TIME_BASE);
     //qDebug("[AVDemuxer] seek to %f %f %lld / %lld backward=%d", double(upos)/double(durationUs()), d->pkt.pts, upos, durationUs(), backward);
     //AVSEEK_FLAG_BACKWARD has no effect? because we know the timestamp
     // FIXME: back flag is opposite? otherwise seek is bad and may crash?
@@ -472,10 +474,10 @@ bool AVDemuxer::seek(qint64 pos)
      * from AV_TIME_BASE units to the stream specific time_base.
      */
     int seek_flag = (backward ? AVSEEK_FLAG_BACKWARD : 0);
-    if (d->seek_target == SeekTarget_AccurateFrame) {
+    if (d->seek_type == AccurateSeek) {
         seek_flag = AVSEEK_FLAG_BACKWARD;
     }
-    if (d->seek_target == SeekTarget_AnyFrame) {
+    if (d->seek_type == AnyFrameSeek) {
         seek_flag = AVSEEK_FLAG_ANY;
     }
     //bool seek_bytes = !!(d->format_ctx->iformat->flags & AVFMT_TS_DISCONT) && strcmp("ogg", d->format_ctx->iformat->name);
@@ -519,12 +521,7 @@ QIODevice* AVDemuxer::ioDevice() const
         return 0;
     if (d->input->name() != "QIODevice")
         return 0;
-    QIODeviceInput* qin = static_cast<QIODeviceInput*>(d->input);
-    if (!qin) {
-        qWarning("Internal error.");
-        return 0;
-    }
-    return qin->device();
+    return d->input->property("device").value<QIODevice*>();
 }
 
 AVInput* AVDemuxer::input() const
@@ -578,14 +575,9 @@ bool AVDemuxer::setMedia(QIODevice* device)
     }
     if (!d->input)
         d->input = AVInput::create("QIODevice");
-    QIODeviceInput *qin = static_cast<QIODeviceInput*>(d->input);
-    if (!qin) {
-        qWarning("Internal error: can not create AVInput for QIODevice.");
-        return true;
-    }
-    // TODO: use property?
-    d->media_changed = qin->device() != device;
-    qin->setIODevice(device); //open outside?
+    QIODevice* old_dev = d->input->property("device").value<QIODevice*>();
+    d->media_changed = old_dev != device;
+    d->input->setProperty("device", QVariant::fromValue(device)); //open outside?
     return d->media_changed;
 }
 

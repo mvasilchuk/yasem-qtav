@@ -1,6 +1,6 @@
 /******************************************************************************
     QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2012-2014 Wang Bin <wbsecg1@gmail.com>
+    Copyright (C) 2012-2015 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -210,8 +210,8 @@ void AudioThread::run()
         int decodedPos = 0;
         qreal delay = 0;
         //AudioFormat.durationForBytes() calculates int type internally. not accurate
-        AudioFormat &af = dec->resampler()->outAudioFormat();
-        qreal byte_rate = af.bytesPerSecond();
+        const AudioFormat &af = dec->resampler()->outAudioFormat();
+        const qreal byte_rate = af.bytesPerSecond();
         while (decodedSize > 0) {
             if (d.stop) {
                 qDebug("audio thread stop after decode()");
@@ -223,59 +223,13 @@ void AudioThread::run()
             const qreal chunk_delay = (qreal)chunk/(qreal)byte_rate;
             pkt.pts += chunk_delay;
             pkt.dts += chunk_delay;
-            QByteArray decodedChunk(chunk, 0); //volume == 0 || mute
             if (has_ao) {
-                //TODO: volume filter and other filters!!!
-                if (!ao->isMute()) {
-                    decodedChunk = QByteArray::fromRawData(decoded.constData() + decodedPos, chunk);
-                    qreal vol = ao->volume();
-                    if (vol != 1.0) {
-                        int len = decodedChunk.size()/ao->audioFormat().bytesPerSample();
-                        switch (ao->audioFormat().sampleFormat()) {
-                        case AudioFormat::SampleFormat_Unsigned8:
-                        case AudioFormat::SampleFormat_Unsigned8Planar: {
-                            quint8 *data = (quint8*)decodedChunk.data(); //TODO: other format?
-                            for (int i = 0; i < len; data[i++] *= vol) {}
-                        }
-                            break;
-                        case AudioFormat::SampleFormat_Signed16:
-                        case AudioFormat::SampleFormat_Signed16Planar: {
-                            qint16 *data = (qint16*)decodedChunk.data(); //TODO: other format?
-                            for (int i = 0; i < len; data[i++] *= vol) {}
-                        }
-                            break;
-                        case AudioFormat::SampleFormat_Signed32:
-                        case AudioFormat::SampleFormat_Signed32Planar: {
-                            qint32 *data = (qint32*)decodedChunk.data(); //TODO: other format?
-                            for (int i = 0; i < len; data[i++] *= vol) {}
-                        }
-                            break;
-                        case AudioFormat::SampleFormat_Float:
-                        case AudioFormat::SampleFormat_FloatPlanar: {
-                            float *data = (float*)decodedChunk.data(); //TODO: other format?
-                            for (int i = 0; i < len; data[i++] *= vol) {}
-                        }
-                            break;
-                        case AudioFormat::SampleFormat_Double:
-                        case AudioFormat::SampleFormat_DoublePlanar: {
-                            double *data = (double*)decodedChunk.data(); //TODO: other format?
-                            for (int i = 0; i < len; data[i++] *= vol) {}
-                        }
-                            break;
-                        default:
-                            break;
-                        }
-                    }
-                }
-                ao->waitForNextBuffer();
-                ao->receiveData(decodedChunk, pkt.pts);
-                ao->play();
+                QByteArray decodedChunk = QByteArray::fromRawData(decoded.constData() + decodedPos, chunk);
+                ao->play(decodedChunk, pkt.pts);
                 d.clock->updateValue(ao->timestamp());
-
                 emit frameDelivered();
             } else {
                 d.clock->updateDelay(delay += chunk_delay);
-
             /*
              * why need this even if we add delay? and usleep sounds weird
              * the advantage is if no audio device, the play speed is ok too

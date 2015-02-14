@@ -47,9 +47,10 @@
 #include "QtAV/private/AVCompat.h"
 #include "utils/Logger.h"
 
-Q_DECLARE_METATYPE(QIODevice*) // for Qt4
 Q_DECLARE_METATYPE(QtAV::AVInput*)
-
+#if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
+Q_DECLARE_METATYPE(QIODevice*)
+#endif
 #define EOF_ISSUE_SOLVED 0
 namespace QtAV {
 
@@ -794,16 +795,17 @@ void AVPlayer::setPosition(qint64 position)
     d->seeking = true;
     d->seek_target = position;
     qreal s = (qreal)pos_pts/1000.0;
-    // TODO: check flag accurate seek
-    if (d->athread) {
-        d->athread->skipRenderUntil(s);
-    }
-    if (d->vthread) {
-        d->vthread->skipRenderUntil(s);
+    if (seekType() == AccurateSeek) {
+        if (d->athread) {
+            d->athread->skipRenderUntil(s);
+        }
+        if (d->vthread) {
+            d->vthread->skipRenderUntil(s);
+        }
     }
     masterClock()->updateValue(double(pos_pts)/1000.0); //what is duration == 0
     masterClock()->updateExternalClock(pos_pts); //in msec. ignore usec part using t/1000
-    d->read_thread->seek(pos_pts);
+    d->read_thread->seek(pos_pts, seekType());
 
     emit positionChanged(position); //emit relative position
 }
@@ -1068,6 +1070,7 @@ void AVPlayer::stopFromDemuxerThread()
     if (currentRepeat() >= repeat() && repeat() >= 0) {
         masterClock()->reset();
         stopNotifyTimer();
+        d->seeking = false;
         d->start_position = 0;
         d->stop_position = kInvalidPosition; // already stopped. so not 0 but invalid. 0 can stop the playback in timerEvent
         d->media_end = kInvalidPosition;
@@ -1151,6 +1154,7 @@ void AVPlayer::stop()
     } else { //called by player
         stopNotifyTimer();
     }
+    d->seeking = false;
     d->reset_state = true;
 
     d->last_position = mediaStopPosition() != kInvalidPosition ? startPosition() : 0;
@@ -1253,6 +1257,16 @@ void AVPlayer::seekForward()
 void AVPlayer::seekBackward()
 {
     seek(position() - kSeekMS);
+}
+
+void AVPlayer::setSeekType(SeekType type)
+{
+    d->seek_type = type;
+}
+
+SeekType AVPlayer::seekType() const
+{
+    return d->seek_type;
 }
 
 void AVPlayer::updateClock(qint64 msecs)
