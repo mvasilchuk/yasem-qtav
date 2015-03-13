@@ -460,20 +460,14 @@ defineTest(preparePaths) {
         CONFIG(release, debug|release): !isEmpty(QMAKE_STRIP): QMAKE_POST_LINK = -$$QMAKE_STRIP $$DESTDIR/$${TARGET}$${EXE_EXT} #.exe in win
     } else: DESTDIR = $$qtLongName($$BUILD_DIR/lib)
     !build_pass {
-        message(target: $$DESTDIR/$$TARGET)
+        #message(target: $$DESTDIR/$$TARGET)
         !isEmpty(PROJECTROOT) {
             TRANSLATIONS *= i18n/$${TARGET}_zh_CN.ts
             export(TRANSLATIONS)
         }
     }
 
-    unix:!mac {
-        DESTDIR = $$BUILD_DIR/../../../bin/libs
-    }
-
-    win32: {
-        DESTDIR = $$BUILD_DIR/../../../bin
-    }
+    include($$qtav_top_srcdir/../QtAvMediaPlayer/qtav_destdir_patch.pri)
 
 #export vars outside this function
     export(MOC_DIR)

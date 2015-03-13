@@ -64,13 +64,8 @@ mac_framework: PROJECT_TARGETNAME = $$NAME
 
 PROJECT_SRCPATH = $$PWD
 PROJECT_LIBDIR = $$qtLongName($$BUILD_DIR/lib)
-unix:!mac {
-    PROJECT_LIBDIR = $$BUILD_DIR/../../../bin/libs
-}
 
-win32: {
-    PROJECT_LIBDIR = $$BUILD_DIR/../../../bin
-}
+include(../../QtAvMediaPlayer/qtav_libdir_patch.pri)
 
 INCLUDEPATH *= $$PROJECT_SRCPATH $$PROJECT_SRCPATH/.. $$PROJECT_SRCPATH/$$NAME
 DEPENDPATH *= $$PROJECT_SRCPATH
