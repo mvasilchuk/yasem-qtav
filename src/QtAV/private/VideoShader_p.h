@@ -1,6 +1,6 @@
 ﻿/******************************************************************************
     QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2014 Wang Bin <wbsecg1@gmail.com>
+    Copyright (C) 2014-2015 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -24,12 +24,18 @@
 
 #include "QtAV/VideoFrame.h"
 #include "QtAV/ColorTransform.h"
+#include <QVector4D>
 #if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+#include <QtGui/QOpenGLBuffer>
 #include <QtGui/QOpenGLShaderProgram>
 #include <QtGui/QOpenGLFunctions>
 #else
-#include <QtOpenGL/QGLShaderProgram>
+#if QT_VERSION >= QT_VERSION_CHECK(4, 8, 0)
 #include <QtOpenGL/QGLFunctions>
+#endif
+#include <QtOpenGL/QGLBuffer>
+#include <QtOpenGL/QGLShaderProgram>
+typedef QGLBuffer QOpenGLBuffer;
 #define QOpenGLShaderProgram QGLShaderProgram
 #define QOpenGLShader QGLShader
 #define QOpenGLFunctions QGLFunctions
@@ -69,6 +75,7 @@ public:
     int u_bpp;
     int u_opacity;
     QVector<int> u_Texture;
+    QVector<int> u_c;
     VideoFormat video_format;
     mutable QByteArray planar_frag, packed_frag;
 };
@@ -86,13 +93,24 @@ public:
         , plane1_linesize(0)
         , effective_tex_width_ratio(1.0)
         , target(GL_TEXTURE_2D)
+        , try_pbo(true)
     {
-        colorTransform.setOutputColorSpace(ColorTransform::RGB);
+        static bool enable_pbo = qgetenv("QTAV_PBO").toInt() > 0;
+        if (try_pbo)
+            try_pbo = enable_pbo;
+        pbo.reserve(4);
+        pbo.resize(4);
+        // QOpenGLBuffer is shared, must initialize 1 by 1.
+        for (int i = 0; i < pbo.size(); ++i)
+            pbo[i] = QOpenGLBuffer(QOpenGLBuffer::PixelUnpackBuffer);
+        colorTransform.setOutputColorSpace(ColorSpace_RGB);
     }
     ~VideoMaterialPrivate();
+    bool initPBO(int plane, int size);
     bool initTexture(GLuint tex, GLint internal_format, GLenum format, GLenum dataType, int width, int height);
     bool initTextures(const VideoFormat& fmt);
-    bool updateTexturesIfNeeded();
+    void updateChannelMap(const VideoFormat& fmt);
+    bool ensureResources();
     void setupQuality();
 
     bool update_texure; // reduce upload/map times. true: new frame not bound. false: current frame is bound
@@ -133,6 +151,9 @@ public:
     QVector<GLfloat> texture_coords;
     ColorTransform colorTransform;
     QMatrix4x4 matrix;
+    bool try_pbo;
+    QVector<QOpenGLBuffer> pbo;
+    QVector<QVector4D> channel_map;
 };
 
 } //namespace QtAV

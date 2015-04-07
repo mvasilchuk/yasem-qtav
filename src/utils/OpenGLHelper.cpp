@@ -1,6 +1,6 @@
 /******************************************************************************
     QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2012-2014 Wang Bin <wbsecg1@gmail.com>
+    Copyright (C) 2012-2015 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -20,14 +20,62 @@
 ******************************************************************************/
 
 #include "OpenGLHelper.h"
+#include <string.h> //strstr
 #include <QtCore/QCoreApplication>
 #if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
+#if QT_VERSION >= QT_VERSION_CHECK(4, 8, 0)
 #include <QtOpenGL/QGLFunctions>
+#endif
+#include <QtOpenGL/QGLContext>
+#define QOpenGLContext QGLContext
 #endif
 #include "utils/Logger.h"
 
 namespace QtAV {
 namespace OpenGLHelper {
+
+bool hasExtension(const char *exts[])
+{
+    const QOpenGLContext *ctx = QOpenGLContext::currentContext();
+    if (!ctx)
+        return false;
+#if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
+    const char *ext = (const char*)glGetString(GL_EXTENSIONS);
+    if (!ext)
+        return false;
+#endif
+    for (int i = 0; exts[i]; ++i) {
+#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+        if (ctx->hasExtension(exts[i]))
+#else
+        if (strstr(ext, exts[i]))
+#endif
+            return true;
+    }
+    return false;
+}
+
+bool isPBOSupported() {
+    // check pbo support
+    static bool support = false;
+    static bool pbo_checked = false;
+    if (pbo_checked)
+        return support;
+    const QOpenGLContext *ctx = QOpenGLContext::currentContext();
+    Q_ASSERT(ctx);
+    if (!ctx)
+        return false;
+    const char* exts[] = {
+        "GL_ARB_pixel_buffer_object",
+        "GL_EXT_pixel_buffer_object",
+        "GL_NV_pixel_buffer_object", //OpenGL ES
+        NULL
+    };
+    support = hasExtension(exts);
+    qDebug() << "PBO: " << support;
+    pbo_checked = true;
+    return support;
+}
 
 // glActiveTexture in Qt4 on windows release mode crash for me
 #if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
@@ -115,6 +163,11 @@ bool videoFormatToGL(const VideoFormat& fmt, GLint* internal_format, GLenum* dat
 #endif //QT_OPENGL_DYNAMIC
     // Very special formats, for which OpenGL happens to have direct support
     static const fmt_entry pixfmt_gl_entry_common[] = {
+        // TODO: review rgb formats & yuv packed to upload correct rgba
+        {VideoFormat::Format_UYVY, GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE },
+        {VideoFormat::Format_YUYV, GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE },
+        {VideoFormat::Format_VYUY, GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE },
+        {VideoFormat::Format_YVYU, GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE },
         {VideoFormat::Format_RGBA32, GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE }, // only tested for osx, win, angle
         {VideoFormat::Format_ABGR32, GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE }, // only tested for osx, win, angle
         {VideoFormat::Format_RGB48, GL_RGB, GL_RGB, GL_UNSIGNED_SHORT },

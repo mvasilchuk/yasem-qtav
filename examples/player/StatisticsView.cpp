@@ -1,6 +1,6 @@
 /******************************************************************************
     QtAV Player Demo:  this file is part of QtAV examples
-    Copyright (C) 2012-2014 Wang Bin <wbsecg1@gmail.com>
+    Copyright (C) 2012-2015 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -41,17 +41,18 @@ QStringList getCommonInfoKeys() {
             << QObject::tr("Available")
             << QObject::tr("Codec")
             << QObject::tr("Decoder")
+            << QObject::tr("Decoder detail")
             << QObject::tr("Total time")
             << QObject::tr("Start time")
             << QObject::tr("Bit rate")
             << QObject::tr("Frames")
+            << QObject::tr("FPS") // avg_frame_rate. guessed by FFmpeg
                ;
 }
 
 QStringList getVideoInfoKeys() {
     return getCommonInfoKeys()
             << QObject::tr("FPS Now") //current display fps
-            << QObject::tr("FPS") // avg_frame_rate. guessed by FFmpeg
             << QObject::tr("Pixel format")
             << QObject::tr("Size") //w x h
             << QObject::tr("Coded size") // w x h
@@ -83,12 +84,13 @@ QList<QVariant> getVideoInfoValues(const Statistics& s) {
             << s.video.available
             << s.video.codec + " (" + s.video.codec_long + ")"
             << s.video.decoder
+            << s.video.decoder_detail
             << s.video.total_time.toString("HH:mm:ss")
             << s.video.start_time.toString("HH:mm:ss")
             << QString::number(s.video.bit_rate/1000) + " Kb/s"
             << s.video.frames
-            << s.video_only.frame_rate
-            << s.video_only.frame_rate
+            << s.video.frame_rate
+            << s.video.frame_rate
             << s.video_only.pix_fmt
             << QString::number(s.video_only.width) + "x" + QString::number(s.video_only.height)
             << QString::number(s.video_only.coded_width) + "x" + QString::number(s.video_only.coded_height)
@@ -100,10 +102,12 @@ QList<QVariant> getAudioInfoValues(const Statistics& s) {
             << s.audio.available
             << s.audio.codec + " (" + s.audio.codec_long + ")"
             << s.audio.decoder
+            << s.audio.decoder_detail
             << s.audio.total_time.toString("HH:mm:ss")
             << s.audio.start_time.toString("HH:mm:ss")
             << QString::number(s.audio.bit_rate/1000) + " Kb/s"
             << s.audio.frames
+            << s.audio.frame_rate
             << s.audio_only.sample_fmt
             << QString::number(s.audio_only.sample_rate) + " Hz"
             << s.audio_only.channels
@@ -135,7 +139,7 @@ StatisticsView::StatisticsView(QWidget *parent) :
     mpMetadata->setText(0, QObject::tr("Metadata"));
     mpView->addTopLevelItem(mpMetadata);
     QTreeWidgetItem *item = createNodeWithItems(mpView, QObject::tr("Video"), getVideoInfoKeys(), &mVideoItems);
-    mpFPS = item->child(7);
+    mpFPS = item->child(9);
     //mpVideoBitRate =
     mpVideoMetadata = new QTreeWidgetItem(item);
     mpVideoMetadata->setText(0, QObject::tr("Metadata"));

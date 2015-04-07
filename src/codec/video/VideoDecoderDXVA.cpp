@@ -53,6 +53,20 @@ template <class T> void SafeRelease(T **ppT)
   }
 }
 
+#define DX_LOG_COMPONENT "DXVA2"
+
+#ifndef DX_LOG_COMPONENT
+#define DX_LOG_COMPONENT "DirectX"
+#endif //DX_LOG_COMPONENT
+#define DX_ENSURE_OK(f, ...) \
+    do { \
+        HRESULT hr = f; \
+        if (FAILED(hr)) { \
+            qWarning() << DX_LOG_COMPONENT " error@" << __LINE__ << ". " #f ": " << QString("(0x%1) ").arg(hr, 0, 16) << qt_error_string(hr); \
+            return __VA_ARGS__; \
+        } \
+    } while (0)
+
 // to use c api, add define COBJMACROS and CINTERFACE
 #define DXVA2API_USE_BITFIELDS
 extern "C" {
@@ -338,7 +352,7 @@ public:
     bool DxResetVideoDecoder();
     bool isHEVCSupported() const;
 
-    bool setup(void **hwctx, int w, int h);
+    bool setup(AVCodecContext *avctx);
     bool open();
     void close();
     // get aligned value depending on codec
@@ -370,7 +384,7 @@ public:
     DXVA2_ConfigPictureDecode    cfg;
     IDirectXVideoDecoder         *decoder;
 
-    struct dxva_context hw;
+    struct dxva_context hw_ctx;
     bool surface_auto;
     unsigned     surface_count;
     unsigned     surface_order;
@@ -390,7 +404,6 @@ VideoDecoderDXVA::VideoDecoderDXVA()
     // dynamic properties about static property details. used by UI
     // format: detail_property
     setProperty("detail_surfaces", tr("Decoding surfaces.") + " " + tr("0: auto"));
-    setProperty("detail_SSE4", tr("Optimized copy decoded data from USWC memory using SSE4.1"));
 }
 
 VideoDecoderId VideoDecoderDXVA::id() const
@@ -478,7 +491,7 @@ bool VideoDecoderDXVAPrivate::getBuffer(void **opaque, uint8_t **data)//vlc_va_t
         if (!DxResetVideoDecoder())
             return false;
     } else if (FAILED(hr)) {
-        qWarning("IDirect3DDeviceManager9_TestDevice %u", (unsigned)hr);
+        qWarning() << "IDirect3DDeviceManager9.TestDevice (" << hr << "): " << qt_error_string(hr);
         return false;
     }
     /* Grab an unused surface, in case none are, try the oldest
@@ -677,17 +690,10 @@ bool VideoDecoderDXVAPrivate::D3dCreateDeviceManager()
         return false;
     }
     qDebug("OurDirect3DCreateDeviceManager9 Success!");
-    if (FAILED(CreateDeviceManager9(&token, &devmng))) {
-        qWarning(" OurDirect3DCreateDeviceManager9 failed");
-        return false;
-    }
+    DX_ENSURE_OK(CreateDeviceManager9(&token, &devmng), false);
     qDebug("obtained IDirect3DDeviceManager9");
     //http://msdn.microsoft.com/en-us/library/windows/desktop/ms693525%28v=vs.85%29.aspx
-    HRESULT hr = devmng->ResetDevice(d3ddev, token);
-    if (FAILED(hr)) {
-        qWarning("IDirect3DDeviceManager9_ResetDevice failed: %08x", (unsigned)hr);
-        return false;
-    }
+    DX_ENSURE_OK(devmng->ResetDevice(d3ddev, token), false);
     return true;
 }
 void VideoDecoderDXVAPrivate::D3dDestroyDeviceManager()
@@ -697,26 +703,8 @@ void VideoDecoderDXVAPrivate::D3dDestroyDeviceManager()
 
 bool VideoDecoderDXVAPrivate::DxCreateVideoService()
 {
-    typedef HRESULT (WINAPI *CreateVideoServiceFunc)(IDirect3DDevice9 *, REFIID riid, void **ppService);
-    CreateVideoServiceFunc CreateVideoService = (CreateVideoServiceFunc)GetProcAddress(hdxva2_dll, "DXVA2CreateVideoService");
-
-    if (!CreateVideoService) {
-        qWarning("cannot load function");
-        return false;
-    }
-    qDebug("DXVA2CreateVideoService Success!");
-
-    HRESULT hr = devmng->OpenDeviceHandle(&device);
-    if (FAILED(hr)) {
-        device = 0;
-        qWarning("OpenDeviceHandle failed");
-        return false;
-    }
-    hr = devmng->GetVideoService(device, IID_IDirectXVideoDecoderService, (void**)&vs);
-    if (FAILED(hr)) {
-        qWarning("GetVideoService failed");
-        return false;
-    }
+    DX_ENSURE_OK(devmng->OpenDeviceHandle(&device), false);
+    DX_ENSURE_OK(devmng->GetVideoService(device, IID_IDirectXVideoDecoderService, (void**)&vs), false);
     return true;
 }
 void VideoDecoderDXVAPrivate::DxDestroyVideoService()
@@ -735,10 +723,7 @@ bool VideoDecoderDXVAPrivate::DxFindVideoServiceConversion(GUID *input, D3DFORMA
     /* Retreive supported modes from the decoder service */
     UINT input_count = 0;
     GUID *input_list = NULL;
-    if (FAILED(vs->GetDecoderDeviceGuids(&input_count, &input_list))) {
-        qWarning("IDirectXVideoDecoderService_GetDecoderDeviceGuids failed");
-        return false;
-    }
+    DX_ENSURE_OK(vs->GetDecoderDeviceGuids(&input_count, &input_list), false);
     for (unsigned i = 0; i < input_count; i++) {
         const GUID &g = input_list[i];
         const dxva2_mode_t *mode = Dxva2FindMode(&g);
@@ -811,16 +796,10 @@ bool VideoDecoderDXVAPrivate::DxFindVideoServiceConversion(GUID *input, D3DFORMA
 
 bool VideoDecoderDXVAPrivate::DxCreateVideoDecoder(int codec_id, int w, int h)
 {
-    if (!codec_ctx) {
-        qWarning("AVCodecContext not ready!");
-        return false;
-    }
     qDebug("DxCreateVideoDecoder id %d %dx%d, surfaces: %u", codec_id, w, h, surface_count);
-    width = w;
-    height = h;
     /* Allocates all surfaces needed for the decoder */
-    surface_width = aligned(width);
-    surface_height = aligned(height);
+    surface_width = aligned(w);
+    surface_height = aligned(h);
     if (surface_auto) {
         switch (codec_id) {
         case QTAV_CODEC_ID(H264):
@@ -843,7 +822,7 @@ bool VideoDecoderDXVAPrivate::DxCreateVideoDecoder(int codec_id, int w, int h)
     IDirect3DSurface9* surface_list[VA_DXVA2_MAX_SURFACE_COUNT];
     qDebug("%s @%d vs=%p surface_count=%d surface_width=%d surface_height=%d"
            , __FUNCTION__, __LINE__, vs, surface_count, surface_width, surface_height);
-    if (FAILED(vs->CreateSurface(surface_width,
+    DX_ENSURE_OK(vs->CreateSurface(surface_width,
                                  surface_height,
                                  surface_count - 1,
                                  render,
@@ -851,10 +830,8 @@ bool VideoDecoderDXVAPrivate::DxCreateVideoDecoder(int codec_id, int w, int h)
                                  0,
                                  DXVA2_VideoDecoderRenderTarget,
                                  surface_list,
-                                 NULL))) {
-        qWarning("IDirectXVideoAccelerationService_CreateSurface failed");
-        return false;
-    }
+                                 NULL)
+            , false);
     memset(surfaces, 0, sizeof(surfaces));
     for (unsigned i = 0; i < surface_count; i++) {
         va_surface_t *surface = &this->surfaces[i];
@@ -867,8 +844,8 @@ bool VideoDecoderDXVAPrivate::DxCreateVideoDecoder(int codec_id, int w, int h)
     /* */
     DXVA2_VideoDesc dsc;
     ZeroMemory(&dsc, sizeof(dsc));
-    dsc.SampleWidth     = codec_ctx->coded_width;
-    dsc.SampleHeight    = codec_ctx->coded_height;
+    dsc.SampleWidth     = w; //coded_width
+    dsc.SampleHeight    = h; //coded_height
     dsc.Format          = render;
     dsc.InputSampleFreq.Numerator   = 0;
     dsc.InputSampleFreq.Denominator = 0;
@@ -889,14 +866,12 @@ bool VideoDecoderDXVAPrivate::DxCreateVideoDecoder(int codec_id, int w, int h)
     /* List all configurations available for the decoder */
     UINT                      cfg_count = 0;
     DXVA2_ConfigPictureDecode *cfg_list = NULL;
-    if (FAILED(vs->GetDecoderConfigurations(input,
+    DX_ENSURE_OK(vs->GetDecoderConfigurations(input,
                                             &dsc,
                                             NULL,
                                             &cfg_count,
-                                            &cfg_list))) {
-        qWarning("IDirectXVideoDecoderService_GetDecoderConfigurations failed");
-        return false;
-    }
+                                            &cfg_list)
+                 , false);
     qDebug("we got %d decoder configurations", cfg_count);
     /* Select the best decoder configuration */
     int cfg_score = 0;
@@ -924,10 +899,7 @@ bool VideoDecoderDXVAPrivate::DxCreateVideoDecoder(int codec_id, int w, int h)
         return false;
     }
     /* Create the decoder */
-    if (FAILED(vs->CreateVideoDecoder(input, &dsc, &cfg, surface_list, surface_count, &decoder))) {
-        qWarning("IDirectXVideoDecoderService_CreateVideoDecoder failed");
-        return false;
-    }
+    DX_ENSURE_OK(vs->CreateVideoDecoder(input, &dsc, &cfg, surface_list, surface_count, &decoder), false);
     qDebug("IDirectXVideoDecoderService_CreateVideoDecoder succeed. decoder=%p", decoder);
     return true;
 }
@@ -965,29 +937,31 @@ bool VideoDecoderDXVAPrivate::isHEVCSupported() const
 }
 
 // hwaccel_context
-bool VideoDecoderDXVAPrivate::setup(void **hwctx, int w, int h)
+bool VideoDecoderDXVAPrivate::setup(AVCodecContext *avctx)
 {
-    if (w <= 0 || h <= 0)
-        return false;
-    if (!decoder || surface_width != aligned(w) || surface_height != aligned(h)) {
-        releaseUSWC();
-        DxDestroyVideoDecoder();
-        *hwctx = NULL;
-        /* FIXME transmit a video_format_t by VaSetup directly */
-        if (!DxCreateVideoDecoder(codec_ctx->codec_id, w, h))
-            return false;
-        hw.decoder = decoder;
-        hw.cfg = &cfg;
-        hw.surface_count = surface_count;
-        hw.surface = hw_surfaces;
-        memset(hw_surfaces, 0, sizeof(hw_surfaces));
-        for (unsigned i = 0; i < surface_count; i++)
-            hw.surface[i] = surfaces[i].d3d;
-        initUSWC(surface_width);
+    const int w = codedWidth(avctx);
+    const int h = codedHeight(avctx);
+    if (decoder && surface_width == aligned(w) && surface_height == aligned(h)) {
+        avctx->hwaccel_context = &hw_ctx;
+        return true;
     }
-    width = w;
-    height = h;
-    *hwctx = &hw;
+    width = avctx->width; // not necessary. set in decode()
+    height = avctx->height;
+    releaseUSWC();
+    DxDestroyVideoDecoder();
+    avctx->hwaccel_context = NULL;
+    /* FIXME transmit a video_format_t by VaSetup directly */
+    if (!DxCreateVideoDecoder(avctx->codec_id, w, h))
+        return false;
+    avctx->hwaccel_context = &hw_ctx;
+    hw_ctx.decoder = decoder;
+    hw_ctx.cfg = &cfg;
+    hw_ctx.surface_count = surface_count;
+    hw_ctx.surface = hw_surfaces;
+    memset(hw_surfaces, 0, sizeof(hw_surfaces));
+    for (unsigned i = 0; i < surface_count; i++)
+        hw_ctx.surface[i] = surfaces[i].d3d;
+    initUSWC(surface_width);
     return true;
 }
 

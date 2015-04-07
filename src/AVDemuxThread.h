@@ -25,10 +25,9 @@
 #include <QtCore/QAtomicInt>
 #include <QtCore/QMutex>
 #include <QtCore/QThread>
-#include <QtCore/QQueue>
 #include <QtCore/QRunnable>
 #include "QtAV/CommonTypes.h"
-#include "utils/BlockingQueue.h"
+#include "PacketBuffer.h"
 
 namespace QtAV {
 
@@ -49,6 +48,8 @@ public:
     //AVDemuxer* demuxer
     bool isPaused() const;
     bool isEnd() const;
+    PacketBuffer* buffer();
+
 public slots:
     void stop(); //TODO: remove it?
     void pause(bool p);
@@ -56,10 +57,13 @@ public slots:
 
 Q_SIGNALS:
     void requestClockPause(bool value);
+    void mediaStatusChanged(QtAV::MediaStatus);
+    void bufferProgressChanged(qreal);
 
 private slots:
     void frameDeliveredSeekOnPause();
     void frameDeliveredNextFrame();
+    void onAVThreadQuit();
 
 protected:
     virtual void run();
@@ -75,19 +79,19 @@ private:
     void processNextSeekTask();
     void seekInternal(qint64 pos, SeekType type); //must call in AVDemuxThread
     void pauseInternal(bool value);
-    void processNextPauseTask();
 
     bool paused;
     bool user_paused;
     volatile bool end;
+    bool m_buffering;
+    int m_buffered;
+    PacketBuffer *m_buffer;
     AVDemuxer *demuxer;
     AVThread *audio_thread, *video_thread;
     int audio_stream, video_stream;
     QMutex buffer_mutex;
     QWaitCondition cond;
     BlockingQueue<QRunnable*> seek_tasks;
-    // if seeking on pause, schedule a skip pause task and a pause task
-    QQueue<QRunnable*> pause_tasks; // in thread tasks
 
     QAtomicInt nb_next_frame;
     QMutex next_frame_mutex;

@@ -1,6 +1,6 @@
 /******************************************************************************
-    VideoRendererTypes: type id and manually id register function
-    Copyright (C) 2014 Wang Bin <wbsecg1@gmail.com>
+    QtAV:  Media play library based on Qt and FFmpeg
+    Copyright (C) 2012-2015 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -19,28 +19,32 @@
     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 ******************************************************************************/
 
-#ifndef QTAV_AUDIOOUTPUTTYPES_H
-#define QTAV_AUDIOOUTPUTTYPES_H
+#ifdef GL_ES
+// Set default precision to medium
+precision mediump int;
+precision mediump float;
+#else
+#define highp
+#define mediump
+#define lowp
+#endif
 
-#include <QtAV/AudioOutput.h>
-#include <QtCore/QVector>
+uniform sampler2D u_Texture0;
+varying lowp vec2 v_TexCoords;
+uniform float u_opacity;
+uniform mat4 u_colorMatrix;
+uniform vec4 u_c0; // yuyv: (0.5, 0, 0.5, 0)
+uniform vec4 u_c1; // yuyv: (0, 1, 0, 0)
+uniform vec4 u_c2; // yuyv: (0, 0, 0, 1)
 
-namespace QtAV {
+void main(void)
+{
+    gl_FragColor = clamp(u_colorMatrix
+                         * vec4(
+                             dot(texture2D(u_Texture0, v_TexCoords), u_c0),
+                             dot(texture2D(u_Texture0, v_TexCoords), u_c1),
+                             dot(texture2D(u_Texture0, v_TexCoords), u_c2),
+                             1)
+                         , 0.0, 1.0) * u_opacity;
+}
 
-/*!
- * \brief GetRegisted
- * \return count of available id
- *  if pass a null ids, only return the count. otherwise regitered ids will be stored in ids
- */
-Q_AV_EXPORT QVector<AudioOutputId> GetRegistedAudioOutputIds();
-
-extern Q_AV_EXPORT AudioOutputId AudioOutputId_PortAudio;
-extern Q_AV_EXPORT AudioOutputId AudioOutputId_OpenAL;
-extern Q_AV_EXPORT AudioOutputId AudioOutputId_OpenSL;
-extern Q_AV_EXPORT AudioOutputId AudioOutputId_DSound;
-
-
-Q_AV_EXPORT void AudioOutput_RegisterAll();
-
-} //namespace QtAV
-#endif // QTAV_AUDIOOUTPUTTYPES_H

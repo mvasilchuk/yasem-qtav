@@ -131,7 +131,10 @@ const char* VideoShader::fragmentShader() const
     if (d.video_format.isPlanar()) {
         d.planar_frag = shaderSourceFromFile("shaders/planar.f.glsl");
     } else {
-        d.packed_frag = shaderSourceFromFile("shaders/rgb.f.glsl");
+        if (d.video_format.isRGB())
+            d.packed_frag = shaderSourceFromFile("shaders/rgb.f.glsl");
+        else
+            d.packed_frag = shaderSourceFromFile("shaders/yuv_packed.frag");
     }
     QByteArray& frag = d.video_format.isPlanar() ? d.planar_frag : d.packed_frag;
     if (frag.isEmpty()) {
@@ -172,10 +175,20 @@ void VideoShader::initialize(QOpenGLShaderProgram *shaderProgram)
     d.u_opacity = shaderProgram->uniformLocation("u_opacity");
     d.u_Texture.resize(textureLocationCount());
     for (int i = 0; i < d.u_Texture.size(); ++i) {
-        QString tex_var = QString("u_Texture%1").arg(i);
+        const QString tex_var = QString("u_Texture%1").arg(i);
         d.u_Texture[i] = shaderProgram->uniformLocation(tex_var);
         qDebug("glGetUniformLocation(\"%s\") = %d", tex_var.toUtf8().constData(), d.u_Texture[i]);
     }
+    d.u_c.clear();
+    if (!d.video_format.isPlanar() && !d.video_format.isRGB()) {
+        d.u_c.resize(d.video_format.channels());
+        for (int i = 0; i < d.u_c.size(); ++i) {
+            const QString u_c = QString("u_c%1").arg(i);
+            d.u_c[i] = shaderProgram->uniformLocation(u_c);
+            qDebug("glGetUniformLocation(\"%s\") = %d", u_c.toUtf8().constData(), d.u_Texture[i]);
+        }
+    }
+
     qDebug("glGetUniformLocation(\"u_MVP_matrix\") = %d", d.u_MVP_matrix);
     qDebug("glGetUniformLocation(\"u_colorMatrix\") = %d", d.u_colorMatrix);
     qDebug("glGetUniformLocation(\"u_bpp\") = %d", d.u_bpp);
@@ -262,6 +275,12 @@ bool VideoShader::update(VideoMaterial *material)
             program()->setUniformValue(textureLocation(i), (GLint)(nb_planes - 1));
         }
     }
+    DPTR_D(VideoShader);
+    if (!d.u_c.isEmpty()) {
+        for (int i = 0; i < d.u_c.size(); ++i) {
+            program()->setUniformValue(d.u_c[i], material->channelMap(i));
+        }
+    }
     //qDebug() << "color mat " << material->colorMatrix();
     program()->setUniformValue(colorMatrixLocation(), material->colorMatrix());
     if (bppLocation() >= 0)
@@ -327,15 +346,19 @@ void VideoMaterial::setCurrentFrame(const VideoFrame &frame)
     const VideoFormat fmt(frame.format());
     d.bpp = fmt.bitsPerPixel(0);
     // http://forum.doom9.org/archive/index.php/t-160211.html
-    ColorTransform::ColorSpace cs = ColorTransform::RGB;
-    if (fmt.isRGB()) {
-        if (fmt.isPlanar())
-            cs = ColorTransform::GBR;
-    } else {
-        if (frame.width() >= 1280 || frame.height() > 576) //values from mpv
-            cs = ColorTransform::BT709;
-        else
-            cs = ColorTransform::BT601;
+    ColorSpace cs = frame.colorSpace();// ColorSpace_RGB;
+    if (cs == ColorSpace_Unknow) {
+        if (fmt.isRGB()) {
+            if (fmt.isPlanar())
+                cs = ColorSpace_GBR;
+            else
+                cs = ColorSpace_RGB;
+        } else {
+            if (frame.width() >= 1280 || frame.height() > 576) //values from mpv
+                cs = ColorSpace_BT709;
+            else
+                cs = ColorSpace_BT601;
+        }
     }
     d.colorTransform.setInputColorSpace(cs);
     d.frame = frame;
@@ -362,8 +385,8 @@ VideoShader* VideoMaterial::createShader() const
 
 MaterialType* VideoMaterial::type() const
 {
-    static MaterialType rgbType;
-    static MaterialType packedType; // TODO: uyuy, yuy2
+    static MaterialType rgb_packed_Type;
+    static MaterialType yuv_packed_Type; // TODO: uyuy, yuy2
     static MaterialType planar16leType;
     static MaterialType planar16beType;
     static MaterialType yuv8Type;
@@ -373,10 +396,11 @@ MaterialType* VideoMaterial::type() const
 
     static MaterialType invalidType;
     const VideoFormat &fmt = d_func().video_format;
-    if (fmt.isRGB() && !fmt.isPlanar())
-        return &rgbType;
-    if (!fmt.isPlanar())
-        return &packedType;
+    if (!fmt.isPlanar()) {
+        if (fmt.isRGB())
+            return &rgb_packed_Type;
+        return &yuv_packed_Type;
+    }
     if (fmt.bytesPerPixel(0) == 1) {
         if (fmt.planeCount() == 4)
             return &yuv8_4plane_Type;
@@ -397,7 +421,7 @@ MaterialType* VideoMaterial::type() const
 bool VideoMaterial::bind()
 {
     DPTR_D(VideoMaterial);
-    if (!d.updateTexturesIfNeeded())
+    if (!d.ensureResources())
         return false;
     const int nb_planes = d.textures.size(); //number of texture id
     if (nb_planes <= 0)
@@ -423,7 +447,9 @@ void VideoMaterial::bindPlane(int p, bool updateTexture)
         return;
     }
     //setupQuality?
+    // try_pbo ? pbo_id : 0. 0= > interop.createHandle
     if (d.frame.map(GLTextureSurface, &d.textures[p])) {
+        //TODO: move to map()?
         OpenGLHelper::glActiveTexture(GL_TEXTURE0 + p); //0 must active?
         DYGL(glBindTexture(d.target, d.textures[p]));
         return;
@@ -431,6 +457,21 @@ void VideoMaterial::bindPlane(int p, bool updateTexture)
     // FIXME: why happens on win?
     if (d.frame.bytesPerLine(p) <= 0)
         return;
+    if (d.try_pbo) {
+        //qDebug("bind PBO %d", p);
+        QOpenGLBuffer &pb = d.pbo[p];
+        pb.bind();
+        // glMapBuffer() causes sync issue.
+        // Call glBufferData() with NULL pointer before glMapBuffer(), the previous data in PBO will be discarded and
+        // glMapBuffer() returns a new allocated pointer or an unused block immediately even if GPU is still working with the previous data.
+        // https://www.opengl.org/wiki/Buffer_Object_Streaming#Buffer_re-specification
+        pb.allocate(pb.size());
+        GLubyte* ptr = (GLubyte*)pb.map(QOpenGLBuffer::WriteOnly);
+        if (ptr) {
+            memcpy(ptr, d.frame.bits(p), pb.size());
+            pb.unmap();
+        }
+    }
     OpenGLHelper::glActiveTexture(GL_TEXTURE0 + p);
     //qDebug("bpl[%d]=%d width=%d", p, frame.bytesPerLine(p), frame.planeWidth(p));
     DYGL(glBindTexture(d.target, d.textures[p]));
@@ -438,7 +479,11 @@ void VideoMaterial::bindPlane(int p, bool updateTexture)
     // This is necessary for non-power-of-two textures
     DYGL(glTexParameteri(d.target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
     DYGL(glTexParameteri(d.target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
-    DYGL(glTexSubImage2D(d.target, 0, 0, 0, d.texture_upload_size[p].width(), d.texture_upload_size[p].height(), d.data_format[p], d.data_type[p], d.frame.bits(p)));
+    // TODO: data address use surfaceinterop.map()
+    DYGL(glTexSubImage2D(d.target, 0, 0, 0, d.texture_upload_size[p].width(), d.texture_upload_size[p].height(), d.data_format[p], d.data_type[p], d.try_pbo ? 0 : d.frame.bits(p)));
+    if (d.try_pbo) {
+        d.pbo[p].release();
+    }
 }
 
 int VideoMaterial::compare(const VideoMaterial *other) const
@@ -473,6 +518,11 @@ const QMatrix4x4& VideoMaterial::colorMatrix() const
 const QMatrix4x4& VideoMaterial::matrix() const
 {
     return d_func().matrix;
+}
+
+const QVector4D& VideoMaterial::channelMap(int channel) const
+{
+    return d_func().channel_map.at(channel);
 }
 
 int VideoMaterial::bpp() const
@@ -537,6 +587,23 @@ QRectF VideoMaterial::normalizedROI(const QRectF &roi) const
     return QRectF(x, y, w, h);
 }
 
+bool VideoMaterialPrivate::initPBO(int plane, int size)
+{
+    QOpenGLBuffer &pb = pbo[plane];
+    if (!pb.isCreated()) {
+        qDebug("Creating PBO for plane %d, size: %d...", plane, size);
+        pb.create();
+    }
+    if (!pb.bind()) {
+        qWarning("Failed to bind PBO for plane %d!!!!!!", plane);
+        try_pbo = false;
+        return false;
+    }
+    qDebug("Allocate PBO size %d", size);
+    pb.allocate(size);
+    return true;
+}
+
 bool VideoMaterialPrivate::initTexture(GLuint tex, GLint internal_format, GLenum format, GLenum dataType, int width, int height)
 {
     DYGL(glBindTexture(target, tex));
@@ -554,6 +621,8 @@ VideoMaterialPrivate::~VideoMaterialPrivate()
     if (!textures.isEmpty()) {
         DYGL(glDeleteTextures(textures.size(), textures.data()));
     }
+    for (int i = 0; i < pbo.size(); ++i)
+        pbo[i].destroy();
 }
 
 bool VideoMaterialPrivate::initTextures(const VideoFormat& fmt)
@@ -574,6 +643,7 @@ bool VideoMaterialPrivate::initTextures(const VideoFormat& fmt)
      * GL ES2 support: GL_RGB, GL_RGBA, GL_LUMINANCE, GL_LUMINANCE_ALPHA, GL_ALPHA
      * http://stackoverflow.com/questions/18688057/which-opengl-es-2-0-texture-formats-are-color-depth-or-stencil-renderable
      */
+    const int nb_planes = fmt.planeCount();
     if (!fmt.isPlanar()) {
         GLint internal_fmt;
         GLenum data_fmt;
@@ -583,22 +653,22 @@ bool VideoMaterialPrivate::initTextures(const VideoFormat& fmt)
             qDebug() << fmt;
             return false;
         }
-        internal_format = QVector<GLint>(fmt.planeCount(), internal_fmt);
-        data_format = QVector<GLenum>(fmt.planeCount(), data_fmt);
-        data_type = QVector<GLenum>(fmt.planeCount(), data_t);
+        internal_format = QVector<GLint>(nb_planes, internal_fmt);
+        data_format = QVector<GLenum>(nb_planes, data_fmt);
+        data_type = QVector<GLenum>(nb_planes, data_t);
         //glPixelStorei(GL_UNPACK_ALIGNMENT, fmt.bytesPerPixel());
         // TODO: if no alpha, data_fmt is not GL_BGRA. align at every upload?
     } else {
-        internal_format.resize(fmt.planeCount());
-        data_format.resize(fmt.planeCount());
-        data_type = QVector<GLenum>(fmt.planeCount(), GL_UNSIGNED_BYTE);
+        internal_format.resize(nb_planes);
+        data_format.resize(nb_planes);
+        data_type = QVector<GLenum>(nb_planes, GL_UNSIGNED_BYTE);
         /*!
          * GLES internal_format == data_format, GL_LUMINANCE_ALPHA is 2 bytes
          * so if NV12 use GL_LUMINANCE_ALPHA, YV12 use GL_ALPHA
          */
         qDebug("///////////bpp %d", fmt.bytesPerPixel());
         internal_format[0] = data_format[0] = GL_LUMINANCE; //or GL_RED for GL
-        if (fmt.planeCount() == 2) {
+        if (nb_planes == 2) {
             // NV12/21 semi-planar
             internal_format[1] = data_format[1] = GL_LUMINANCE_ALPHA;
         } else {
@@ -609,14 +679,14 @@ bool VideoMaterialPrivate::initTextures(const VideoFormat& fmt)
             } else {
                 internal_format[1] = data_format[1] = GL_LUMINANCE; //vec4(L,L,L,1)
                 internal_format[2] = data_format[2] = GL_ALPHA;//GL_ALPHA;
-                if (fmt.planeCount() == 4)
+                if (nb_planes == 4)
                     internal_format[3] = data_format[3] = GL_ALPHA; //GL_ALPHA
             }
         }
     }
-    for (int i = 0; i < fmt.planeCount(); ++i) {
+    for (int i = 0; i < nb_planes; ++i) {
         //qDebug("format: %#x GL_LUMINANCE_ALPHA=%#x", data_format[i], GL_LUMINANCE_ALPHA);
-        if (fmt.bytesPerPixel(i) == 2 && fmt.planeCount() == 3) {
+        if (fmt.bytesPerPixel(i) == 2 && nb_planes == 3) {
             //data_type[i] = GL_UNSIGNED_SHORT;
         }
         const int bpp_gl = OpenGLHelper::bytesOfGLFormat(data_format[i], data_type[i]);
@@ -637,13 +707,13 @@ bool VideoMaterialPrivate::initTextures(const VideoFormat& fmt)
      * But the number of actural textures we upload is plane count.
      * Which means the number of texture id equals to plane count
      */
-    if (textures.size() != fmt.planeCount()) {
+    if (textures.size() != nb_planes) {
         qDebug("delete %d textures", textures.size());
         if (!textures.isEmpty()) {
             DYGL(glDeleteTextures(textures.size(), textures.data()));
             textures.clear();
         }
-        textures.resize(fmt.planeCount());
+        textures.resize(nb_planes);
         DYGL(glGenTextures(textures.size(), textures.data()));
     }
     qDebug("init textures...");
@@ -653,7 +723,39 @@ bool VideoMaterialPrivate::initTextures(const VideoFormat& fmt)
     return true;
 }
 
-bool VideoMaterialPrivate::updateTexturesIfNeeded()
+void VideoMaterialPrivate::updateChannelMap(const VideoFormat &fmt)
+{
+    channel_map.clear();
+    if (fmt.isPlanar() || fmt.isRGB())
+        return;
+    channel_map.resize(fmt.channels());
+    switch (fmt.pixelFormat()) {
+    case VideoFormat::Format_UYVY:
+        channel_map[0] = QVector4D(0, 0.5, 0, 0.5);
+        channel_map[1] = QVector4D(1.0, 0, 0, 0);
+        channel_map[2] = QVector4D(0, 0, 1.0, 0);
+        break;
+    case VideoFormat::Format_YUYV:
+        channel_map[0] = QVector4D(0.5, 0, 0.5, 0);
+        channel_map[1] = QVector4D(0, 1.0, 0, 0);
+        channel_map[2] = QVector4D(0, 0, 0, 1.0);
+        break;
+    case VideoFormat::Format_VYUY:
+        channel_map[0] = QVector4D(0, 0.5, 0, 0.5);
+        channel_map[1] = QVector4D(0, 0, 1.0, 0);
+        channel_map[2] = QVector4D(1.0, 0, 0, 0);
+        break;
+    case VideoFormat::Format_YVYU:
+        channel_map[0] = QVector4D(0.5, 0, 0.5, 0);
+        channel_map[1] = QVector4D(0, 0, 0, 1.0);
+        channel_map[2] = QVector4D(0, 1.0, 0, 0);
+        break;
+    default:
+        break;
+    }
+}
+
+bool VideoMaterialPrivate::ensureResources()
 {
     if (!update_texure) //video frame is already uploaded and displayed
         return true;
@@ -723,6 +825,20 @@ bool VideoMaterialPrivate::updateTexturesIfNeeded()
     }
     if (update_textures) {
         initTextures(fmt);
+        updateChannelMap(fmt);
+        // check pbo support
+        // TODO: complete pbo extension set
+        try_pbo = try_pbo && OpenGLHelper::isPBOSupported();
+        // check PBO support with bind() is fine, no need to check extensions
+        if (try_pbo) {
+            for (int i = 0; i < nb_planes; ++i) {
+                //qDebug("Init PBO for plane %d", i);
+                if (!initPBO(i, frame.bytesPerLine(i)*frame.planeHeight(i))) {
+                    qWarning("Failed to init PBO for plane %d", i);
+                    break;
+                }
+            }
+        }
     }
     return true;
 }

@@ -1,6 +1,6 @@
 /******************************************************************************
     QtAV Player Demo:  this file is part of QtAV examples
-    Copyright (C) 2012-2015 Wang Bin <wbsecg1@gmail.com>
+    Copyright (C) 2014-2015 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -38,6 +38,7 @@
 class COMMON_EXPORT Config : public QObject
 {
     Q_OBJECT
+    Q_PROPERTY(qreal forceFrameRate READ forceFrameRate WRITE setForceFrameRate NOTIFY forceFrameRateChanged)
     Q_PROPERTY(QStringList decoderPriorityNames READ decoderPriorityNames WRITE setDecoderPriorityNames NOTIFY decoderPriorityNamesChanged)
     Q_PROPERTY(QString captureDir READ captureDir WRITE setCaptureDir NOTIFY captureDirChanged)
     Q_PROPERTY(QString captureFormat READ captureFormat WRITE setCaptureFormat NOTIFY captureFormatChanged)
@@ -63,6 +64,8 @@ public:
     QString defaultDir() const;
     //void loadFromFile(const QString& file);
 
+    qreal forceFrameRate() const;
+    Config& setForceFrameRate(qreal value);
     // in priority order. the same order as displayed in ui
     QStringList decoderPriorityNames() const;
     Config& setDecoderPriorityNames(const QStringList& names);
@@ -113,22 +116,29 @@ public:
     QString avformatExtra() const;
     Config& avformatExtra(const QString& text);
 
-    QString avfilterOptions() const;
-    Config& avfilterOptions(const QString& options);
-    bool avfilterEnable() const;
-    Config& avfilterEnable(bool e);
+    QString avfilterVideoOptions() const;
+    Config& avfilterVideoOptions(const QString& options);
+    bool avfilterVideoEnable() const;
+    Config& avfilterVideoEnable(bool e);
+
+    QString avfilterAudioOptions() const;
+    Config& avfilterAudioOptions(const QString& options);
+    bool avfilterAudioEnable() const;
+    Config& avfilterAudioEnable(bool e);
 
     Q_INVOKABLE QVariant operator ()(const QString& key) const;
     Q_INVOKABLE Config& operator ()(const QString& key, const QVariant& value);
 public:
     //keyword 'signals' maybe protected. we need call the signals in other classes. Q_SIGNAL is empty
+    Q_SIGNAL void forceFrameRateChanged();
     Q_SIGNAL void decodingThreadsChanged(int n);
     Q_SIGNAL void decoderPriorityNamesChanged();
     Q_SIGNAL void registeredDecodersChanged(const QVector<int>& r);
     Q_SIGNAL void captureDirChanged(const QString& dir);
     Q_SIGNAL void captureFormatChanged(const QString& fmt);
     Q_SIGNAL void captureQualityChanged(int quality);
-    Q_SIGNAL void avfilterChanged();
+    Q_SIGNAL void avfilterVideoChanged();
+    Q_SIGNAL void avfilterAudioChanged();
     Q_SIGNAL void subtitleEnabledChanged();
     Q_SIGNAL void subtitleAutoLoadChanged();
     Q_SIGNAL void subtitleEnginesChanged();

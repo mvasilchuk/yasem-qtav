@@ -23,7 +23,9 @@
 #include "VideoDecoderFFmpegHW_p.h"
 #include <algorithm>
 #include "utils/Logger.h"
-
+#ifndef Q_UNLIKELY
+#define Q_UNLIKELY(x) (!!(x))
+#endif
 namespace QtAV {
 
 static AVPixelFormat ffmpeg_get_va_format(struct AVCodecContext *c, const AVPixelFormat * ff)
@@ -57,8 +59,8 @@ static int ffmpeg_get_va_buffer2(struct AVCodecContext *ctx, AVFrame *frame, int
     //frame->reordered_opaque = ctx->reordered_opaque; //?? xbmc
     VideoDecoderFFmpegHWPrivate *va = (VideoDecoderFFmpegHWPrivate*)ctx->opaque;
     /* hwaccel_context is not present in old ffmpeg version */
-    // not coded_width. assume coded_width is 6 aligned of width
-    if (!va->setup(&ctx->hwaccel_context, ctx->width, ctx->height)) {
+    // not coded_width. assume coded_width is 6 aligned of width. ??
+    if (!va->setup(ctx)) {
         qWarning("va Setup failed");
         return -1;
     }
@@ -86,15 +88,15 @@ static int ffmpeg_get_va_buffer(struct AVCodecContext *c, AVFrame *ff)//vlc_va_t
     VideoDecoderFFmpegHWPrivate *va = (VideoDecoderFFmpegHWPrivate*)c->opaque;
     //ff->reordered_opaque = c->reordered_opaque; //TODO: dxva?
     ff->opaque = 0;
-#if ! LIBAVCODEC_VERSION_CHECK(54, 34, 0, 79, 101)
+#if !AV_MODULE_CHECK(LIBAVCODEC, 54, 34, 0, 79, 101)
     ff->pkt_pts = c->pkt ? c->pkt->pts : AV_NOPTS_VALUE;
 #endif
 #if LIBAVCODEC_VERSION_MAJOR < 54
     ff->age = 256*256*256*64;
 #endif
     /* hwaccel_context is not present in old ffmpeg version */
-    // not coded_width. assume coded_width is 6 aligned of width
-    if (!va->setup(&c->hwaccel_context, c->width, c->height)) {
+    // not coded_width. assume coded_width is 6 aligned of width. ??
+    if (!va->setup(c)) {
         qWarning("va Setup failed");
         return -1;
     }
@@ -149,7 +151,7 @@ AVPixelFormat VideoDecoderFFmpegHWPrivate::getFormat(struct AVCodecContext *p_co
         /* We try to call vlc_va_Setup when possible to detect errors when
          * possible (later is too late) */
         if (p_context->width > 0 && p_context->height > 0
-         && !setup(&p_context->hwaccel_context, p_context->width, p_context->height)) {
+         && !setup(p_context)) {
             qWarning("acceleration setup failure");
             break;
         }
@@ -172,6 +174,20 @@ end:
     return avcodec_default_get_format(p_context, pi_fmt);
 }
 
+int VideoDecoderFFmpegHWPrivate::codedWidth(AVCodecContext *avctx) const
+{
+    if (avctx->coded_width > 0)
+        return avctx->coded_width;
+    return avctx->width;
+}
+
+int VideoDecoderFFmpegHWPrivate::codedHeight(AVCodecContext *avctx) const
+{
+    if (avctx->coded_height > 0)
+        return avctx->coded_height;
+    return avctx->height;
+}
+
 bool VideoDecoderFFmpegHWPrivate::initUSWC(int lineSize)
 {
     if (!copy_uswc)
@@ -188,6 +204,7 @@ void VideoDecoderFFmpegHWPrivate::releaseUSWC()
 VideoDecoderFFmpegHW::VideoDecoderFFmpegHW(VideoDecoderFFmpegHWPrivate &d):
     VideoDecoderFFmpegBase(d)
 {
+    setProperty("detail_SSE4", tr("Optimized copy decoded data from USWC memory using SSE4.1 if possible"));
 }
 
 void VideoDecoderFFmpegHW::setSSE4(bool y)
@@ -250,7 +267,8 @@ VideoFrame VideoDecoderFFmpegHW::copyToFrame(const VideoFormat& fmt, int surface
         // TODO: buffer pool and create VideoFrame when needed to avoid copy? also for other va
         frame = frame.clone();
     }
-    frame.setTimestamp(d.frame->pkt_pts);
+    frame.setTimestamp(double(d.frame->pkt_pts)/1000.0);
+    d.updateColorDetails(&frame);
     return frame;
 }
 
@@ -281,6 +299,7 @@ bool VideoDecoderFFmpegHW::prepare()
     }
     //// From vlc begin
     d.codec_ctx->thread_safe_callbacks = true; //?
+#pragma warning(disable:4065) //vc: switch has default but no case
     switch (d.codec_ctx->codec_id) {
 # if (LIBAVCODEC_VERSION_INT < AV_VERSION_INT(55, 1, 0))
         /// tested libav-9.x + va-api. If remove this code:  Bug detected, please report the issue. Context scratch buffers could not be allocated due to unknown size
@@ -295,8 +314,8 @@ bool VideoDecoderFFmpegHW::prepare()
     //// From vlc end
     //TODO: neccesary?
 #if 0
-    if (!d.setup(&d.codec_ctx->hwaccel_context, d.codec_ctx->width, d.codec_ctx->height)) {
-        qWarning("Setup vaapi failed.");
+    if (!d.setup(d.codec_ctx)) {
+        qWarning("Setup va failed.");
         return false;
     }
 #endif

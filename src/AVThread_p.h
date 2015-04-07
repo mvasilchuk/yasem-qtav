@@ -1,6 +1,6 @@
 /******************************************************************************
     QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2012-2013 Wang Bin <wbsecg1@gmail.com>
+    Copyright (C) 2012-2015 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -24,11 +24,8 @@
 
 #include <QtCore/QMutex>
 #include <QtCore/QMutexLocker>
-#include <QtCore/QQueue>
 #include <QtCore/QWaitCondition>
-#include "QtAV/Packet.h"
-#include "utils/BlockingQueue.h"
-//#include "AVThread.h" //PacketQueue
+#include "PacketBuffer.h"
 
 class QRunnable;
 namespace QtAV {
@@ -47,7 +44,6 @@ public:
     AVThreadPrivate():
         paused(false)
       , next_pause(false)
-      , demux_end(false)
       , stop(false)
       , clock(0)
       , dec(0)
@@ -62,10 +58,9 @@ public:
     virtual ~AVThreadPrivate();
 
     bool paused, next_pause;
-    bool demux_end;
     volatile bool stop; //true when packets is empty and demux is end.
     AVClock *clock;
-    BlockingQueue<Packet, QQueue> packets;
+    PacketBuffer packets;
     AVDecoder *dec;
     OutputSet *outputSet;
     QMutex mutex;

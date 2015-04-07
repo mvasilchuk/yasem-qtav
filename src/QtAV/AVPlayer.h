@@ -24,10 +24,10 @@
 
 #include <QtCore/QHash>
 #include <QtCore/QScopedPointer>
+#include <QtAV/AudioOutput.h>
 #include <QtAV/AVClock.h>
 #include <QtAV/Statistics.h>
 #include <QtAV/VideoDecoderTypes.h>
-#include <QtAV/AudioOutputTypes.h>
 #include <QtAV/AVError.h>
 
 class QIODevice;
@@ -48,6 +48,7 @@ class Q_AV_EXPORT AVPlayer : public QObject
     Q_PROPERTY(bool autoLoad READ isAutoLoad WRITE setAutoLoad NOTIFY autoLoadChanged)
     Q_PROPERTY(bool asyncLoad READ isAsyncLoad WRITE setAsyncLoad NOTIFY asyncLoadChanged)
     Q_PROPERTY(bool mute READ isMute WRITE setMute NOTIFY muteChanged)
+    Q_PROPERTY(qreal bufferProgress READ bufferProgress NOTIFY bufferProgressChanged)
     Q_PROPERTY(bool seekable READ isSeekable NOTIFY seekableChanged)
     Q_PROPERTY(qint64 position READ position WRITE setPosition NOTIFY positionChanged)
     Q_PROPERTY(qint64 startPosition READ startPosition WRITE setStartPosition NOTIFY startPositionChanged)
@@ -55,6 +56,7 @@ class Q_AV_EXPORT AVPlayer : public QObject
     Q_PROPERTY(qint64 repeat READ repeat WRITE setRepeat NOTIFY repeatChanged)
     Q_PROPERTY(int currentRepeat READ currentRepeat NOTIFY currentRepeatChanged)
     Q_PROPERTY(qint64 interruptTimeout READ interruptTimeout WRITE setInterruptTimeout NOTIFY interruptTimeoutChanged)
+    Q_PROPERTY(int notifyInterval READ notifyInterval WRITE setNotifyInterval NOTIFY notifyIntervalChanged)
     Q_PROPERTY(int brightness READ brightness WRITE setBrightness NOTIFY brightnessChanged)
     Q_PROPERTY(int contrast READ contrast WRITE setContrast NOTIFY contrastChanged)
     Q_PROPERTY(int saturation READ saturation WRITE setSaturation NOTIFY saturationChanged)
@@ -122,7 +124,7 @@ public:
     bool isAutoLoad() const; // NOT implemented
 
     MediaStatus mediaStatus() const;
-
+    // TODO: add hasAudio, hasVideo, isMusic(has pic)
     /*!
      * \brief relativeTimeMode
      * true (default): mediaStartPosition() is always 0. All time related API, for example setPosition(), position() and positionChanged()
@@ -197,23 +199,19 @@ public:
     void setRenderer(VideoRenderer* renderer);
     VideoRenderer* renderer();
     QList<VideoRenderer*> videoOutputs();
-    void setAudioOutput(AudioOutput* ao);
-    //default has 1 audiooutput
-    //void addAudioOutput(AudioOutput* ao);
-    //void removeAudioOutput(AudioOutput* ao);
-    //QList<AudioOutput*> audioOutputs();
     /*!
-     * To change audio format, you should set both AudioOutput's format and AudioResampler's format
-     * So signals/slots is a better solution.
-     * TODO: AudioOutput.audioFormatChanged (signal)---AudioResampler.setOutAudioFormat (slot)
+     * \brief audio
+     * AVPlayer always has an AudioOutput instance. You can access or control audio output properties through audio().
+     * \return
      */
     AudioOutput* audio();
+    /// enableAudio(false): no audio thread will be started. broken now
     void enableAudio(bool enable = true);
     void disableAudio(bool disable = true);
-    void setMute(bool mute);
-    bool isMute() const;
+    Q_DECL_DEPRECATED void setMute(bool mute = true); // use audio()->setMute(bool) instead
+    Q_DECL_DEPRECATED bool isMute() const; // use audio()->isMute() instead
     /*!
-     * \brief setSpeed set playing speed.
+     * \brief setSpeed set playback speed.
      * \param speed  speed > 0. 1.0: normal speed
      * TODO: playbackRate
      */
@@ -227,8 +225,18 @@ public:
      */
     void setInterruptTimeout(qint64 ms);
     qint64 interruptTimeout() const;
-
-    Statistics& statistics();
+    /*!
+     * \brief setFrameRate
+     * Force the (video) frame rate to a given value.
+     * Call it before playback start.
+     * If frame rate is set to a valid value(>0), the clock type will be set to
+     * User configuration of AVClock::ClockType and autoClock will be ignored.
+     * \param value <=0: ignore the value. normal playback ClockType and AVCloc
+     * >0: force to a given (video) frame rate
+     */
+    void setFrameRate(qreal value);
+    qreal forcedFrameRate() const;
+    //Statistics& statistics();
     const Statistics& statistics() const;
     /*
      * install the filter in AVThread. Filter will apply before rendering data
@@ -281,14 +289,16 @@ public:
 
 public slots:
     void togglePause();
-    void pause(bool p);
+    void pause(bool p = true);
     /*!
      * \brief play
      * If media is not loaded, load()
      */
     void play(); //replay
     void stop();
-    void playNextFrame();
+    void playNextFrame(); //deprecated
+    //void stepForward();
+    //void stepBackward();
 
     void setRelativeTimeMode(bool value);
     /*!
@@ -334,6 +344,35 @@ public slots:
     void setSeekType(SeekType type);
     SeekType seekType() const;
 
+    /*!
+     * \brief bufferProgress
+     * How much the data buffer is currently filled. From 0.0 to 1.0.
+     * Playback can start or resume only when the buffer is entirely filled.
+     */
+    qreal bufferProgress() const;
+    /*!
+     * \brief buffered
+     * Current buffered value in msecs, bytes or packet count depending on bufferMode()
+     */
+    int buffered() const;
+    void setBufferMode(BufferMode mode);
+    BufferMode bufferMode() const;
+    /*!
+     * \brief setBufferValue
+     * Ensure the buffered msecs/bytes/packets in queue is at least the given value before playback starts
+     * \param value <0: auto; BufferBytes: bytes, BufferTime: msecs, BufferPackets: packets count
+     */
+    void setBufferValue(int value);
+    int bufferValue() const;
+
+    /*!
+     * \brief setNotifyInterval
+     * The interval at which progress will update
+     * \param msec <=0: auto and compute internally depending on duration and fps
+     */
+    void setNotifyInterval(int msec);
+    /// The real notify interval. Always > 0
+    int notifyInterval() const;
     void updateClock(qint64 msecs); //update AVClock's external clock
     // for all renderers. val: [-100, 100]. other value changes nothing
     void setBrightness(int val);
@@ -342,6 +381,7 @@ public slots:
     void setSaturation(int val);
 
 signals:
+    void bufferProgressChanged(qreal);
     void relativeTimeModeChanged();
     void autoLoadChanged();
     void asyncLoadChanged();
@@ -361,11 +401,11 @@ signals:
     void seekableChanged();
     void positionChanged(qint64 position);
     void interruptTimeoutChanged();
+    void notifyIntervalChanged();
     void brightnessChanged(int val);
     void contrastChanged(int val);
     void hueChanged(int val);
     void saturationChanged(int val);
-
 private slots:
     void loadInternal(); // simply load
     void unloadInternal();
@@ -377,6 +417,7 @@ private slots:
     void startNotifyTimer();
     void stopNotifyTimer();
     void onStarted();
+    void updateMediaStatus(QtAV::MediaStatus status);
 
 protected:
     // TODO: set position check timer interval

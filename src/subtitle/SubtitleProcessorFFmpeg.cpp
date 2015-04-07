@@ -311,10 +311,8 @@ bool SubtitleProcessorFFmpeg::processSubtitle()
         return false;
     }
     while (!m_reader.atEnd()) {
-        if (!m_reader.readFrame()) {
-            avcodec_close(codec_ctx);
-            codec_ctx = 0;
-            return false;
+        if (!m_reader.readFrame()) { // eof or other errors
+            continue;
         }
         if (m_reader.stream() != ss)
             continue;
