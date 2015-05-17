@@ -1,3 +1,23 @@
+/******************************************************************************
+    QtAV Player Demo:  this file is part of QtAV examples
+    Copyright (C) 2014-2015 Wang Bin <wbsecg1@gmail.com>
+
+*   This file is part of QtAV
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+******************************************************************************/
+
 #include "common.h"
 
 #include <QFileOpenEvent>
@@ -17,7 +37,7 @@ QOptions get_common_options()
             ("-width", 800, "width of player")
             ("height", 450, "height of player")
             ("fullscreen", "fullscreen")
-            ("deocder", "FFmpeg", "use a given decoder")
+            ("decoder", "FFmpeg", "use a given decoder")
             ("decoders,-vd", "cuda;vaapi;vda;dxva;cedarv;ffmpeg", "decoder name list in priority order seperated by ';'")
             ("file,f", "", "file or url to play")
             ("language", "system", "language on UI. can be 'system', 'none' and locale name e.g. zh_CN")
@@ -65,6 +85,8 @@ void set_opengl_backend(const QString& glopt, const QString &appname)
         gl = "software";
     else
         gl = glopt.toLower();
+    if (gl == "auto" && Config::instance().isANGLE())
+        gl = "es";
 #if QT_VERSION >= QT_VERSION_CHECK(5, 4, 0)
     if (gl == "es")
         QCoreApplication::setAttribute(Qt::AA_UseOpenGLES);
@@ -91,3 +113,16 @@ bool AppEventFilter::eventFilter(QObject *obj, QEvent *ev)
         QMetaObject::invokeMethod(m_player, "play", Q_ARG(QUrl, QUrl(foe->url())));
     return true;
 }
+
+static void initResources() {
+    Q_INIT_RESOURCE(theme);
+}
+
+namespace {
+    struct ResourceLoader {
+    public:
+        ResourceLoader() { initResources(); }
+    } qrc;
+}
+
+

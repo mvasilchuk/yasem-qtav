@@ -47,7 +47,6 @@ class Q_AV_EXPORT AVPlayer : public QObject
     Q_PROPERTY(bool relativeTimeMode READ relativeTimeMode WRITE setRelativeTimeMode NOTIFY relativeTimeModeChanged)
     Q_PROPERTY(bool autoLoad READ isAutoLoad WRITE setAutoLoad NOTIFY autoLoadChanged)
     Q_PROPERTY(bool asyncLoad READ isAsyncLoad WRITE setAsyncLoad NOTIFY asyncLoadChanged)
-    Q_PROPERTY(bool mute READ isMute WRITE setMute NOTIFY muteChanged)
     Q_PROPERTY(qreal bufferProgress READ bufferProgress NOTIFY bufferProgressChanged)
     Q_PROPERTY(bool seekable READ isSeekable NOTIFY seekableChanged)
     Q_PROPERTY(qint64 position READ position WRITE setPosition NOTIFY positionChanged)
@@ -56,6 +55,7 @@ class Q_AV_EXPORT AVPlayer : public QObject
     Q_PROPERTY(qint64 repeat READ repeat WRITE setRepeat NOTIFY repeatChanged)
     Q_PROPERTY(int currentRepeat READ currentRepeat NOTIFY currentRepeatChanged)
     Q_PROPERTY(qint64 interruptTimeout READ interruptTimeout WRITE setInterruptTimeout NOTIFY interruptTimeoutChanged)
+    Q_PROPERTY(bool interruptOnTimeout READ isInterruptOnTimeout WRITE setInterruptOnTimeout NOTIFY interruptOnTimeoutChanged)
     Q_PROPERTY(int notifyInterval READ notifyInterval WRITE setNotifyInterval NOTIFY notifyIntervalChanged)
     Q_PROPERTY(int brightness READ brightness WRITE setBrightness NOTIFY brightnessChanged)
     Q_PROPERTY(int contrast READ contrast WRITE setContrast NOTIFY contrastChanged)
@@ -183,7 +183,7 @@ public:
      * \return
      */
     QTAV_DEPRECATED bool captureVideo();
-    VideoCapture *videoCapture();
+    VideoCapture *videoCapture() const;
     /*
      * replay without parsing the stream if it's already loaded. (not implemented)
      * to force reload the stream, unload() then play()
@@ -220,11 +220,19 @@ public:
 
     /*!
      * \brief setInterruptTimeout
-     * Abort current operation(open, read) if it spends too much time.
-     * \param value
+     * Emit error(usually network error) if open/read spends too much time.
+     * If isInterruptOnTimeout() is true, abort current operation and stop playback
+     * \param ms milliseconds. <0: never interrupt.
      */
+    /// TODO: rename to timeout
     void setInterruptTimeout(qint64 ms);
     qint64 interruptTimeout() const;
+    /*!
+     * \brief setInterruptOnTimeout
+     * \param value
+     */
+    void setInterruptOnTimeout(bool value);
+    bool isInterruptOnTimeout() const;
     /*!
      * \brief setFrameRate
      * Force the (video) frame rate to a given value.
@@ -285,7 +293,6 @@ public:
     QVariantHash optionsForAudioCodec() const;
     void setOptionsForVideoCodec(const QVariantHash& dict);
     QVariantHash optionsForVideoCodec() const;
-    // avfilter_init_dict
 
 public slots:
     void togglePause();
@@ -359,7 +366,8 @@ public slots:
     BufferMode bufferMode() const;
     /*!
      * \brief setBufferValue
-     * Ensure the buffered msecs/bytes/packets in queue is at least the given value before playback starts
+     * Ensure the buffered msecs/bytes/packets in queue is at least the given value before playback starts.
+     * Set before playback starts.
      * \param value <0: auto; BufferBytes: bytes, BufferTime: msecs, BufferPackets: packets count
      */
     void setBufferValue(int value);
@@ -380,7 +388,7 @@ public slots:
     void setHue(int val);  //not implemented
     void setSaturation(int val);
 
-signals:
+Q_SIGNALS:
     void bufferProgressChanged(qreal);
     void relativeTimeModeChanged();
     void autoLoadChanged();
@@ -399,14 +407,16 @@ signals:
     void startPositionChanged(qint64 position);
     void stopPositionChanged(qint64 position);
     void seekableChanged();
+    void seekFinished();
     void positionChanged(qint64 position);
     void interruptTimeoutChanged();
+    void interruptOnTimeoutChanged();
     void notifyIntervalChanged();
     void brightnessChanged(int val);
     void contrastChanged(int val);
     void hueChanged(int val);
     void saturationChanged(int val);
-private slots:
+private Q_SLOTS:
     void loadInternal(); // simply load
     void unloadInternal();
     void playInternal(); // simply play

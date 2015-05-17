@@ -88,6 +88,7 @@ AVPlayer::AVPlayer(QObject *parent) :
     connect(d->read_thread, SIGNAL(requestClockPause(bool)), masterClock(), SLOT(pause(bool)), Qt::DirectConnection);
     connect(d->read_thread, SIGNAL(mediaStatusChanged(QtAV::MediaStatus)), this, SLOT(updateMediaStatus(QtAV::MediaStatus)));
     connect(d->read_thread, SIGNAL(bufferProgressChanged(qreal)), this, SIGNAL(bufferProgressChanged(qreal)));
+    connect(d->read_thread, SIGNAL(seekFinished(qint64)), this, SIGNAL(seekFinished()), Qt::DirectConnection);
 
     d->vcapture = new VideoCapture(this);
 }
@@ -214,6 +215,8 @@ qreal AVPlayer::speed() const
 
 void AVPlayer::setInterruptTimeout(qint64 ms)
 {
+    if (ms < 0LL)
+        ms = -1LL;
     if (d->interrupt_timeout == ms)
         return;
     d->interrupt_timeout = ms;
@@ -224,6 +227,19 @@ void AVPlayer::setInterruptTimeout(qint64 ms)
 qint64 AVPlayer::interruptTimeout() const
 {
     return d->interrupt_timeout;
+}
+
+void AVPlayer::setInterruptOnTimeout(bool value)
+{
+    if (isInterruptOnTimeout() == value)
+        return;
+    d->demuxer.setInterruptOnTimeout(value);
+    emit interruptOnTimeoutChanged();
+}
+
+bool AVPlayer::isInterruptOnTimeout() const
+{
+    return d->demuxer.isInterruptOnTimeout();
 }
 
 void AVPlayer::setFrameRate(qreal value)
@@ -422,7 +438,7 @@ AVInput* AVPlayer::input() const
     return d->current_source.value<QtAV::AVInput*>();
 }
 
-VideoCapture* AVPlayer::videoCapture()
+VideoCapture* AVPlayer::videoCapture() const
 {
     return d->vcapture;
 }
@@ -630,7 +646,7 @@ void AVPlayer::unload()
     connect(&d->demuxer, SIGNAL(loaded()), this, SLOT(unloadInternal()));
     // user interrupt if still loading
     connect(&d->demuxer, SIGNAL(userInterrupted()), this, SLOT(unloadInternal()));
-    d->demuxer.setInterruptStatus(1);
+    d->demuxer.setInterruptStatus(-1);
 }
 
 void AVPlayer::unloadInternal()
@@ -795,14 +811,6 @@ void AVPlayer::setPosition(qint64 position)
     d->seeking = true;
     d->seek_target = position;
     qreal s = (qreal)pos_pts/1000.0;
-    if (seekType() == AccurateSeek) {
-        if (d->athread) {
-            d->athread->skipRenderUntil(s);
-        }
-        if (d->vthread) {
-            d->vthread->skipRenderUntil(s);
-        }
-    }
     masterClock()->updateValue(double(pos_pts)/1000.0); //what is duration == 0
     masterClock()->updateExternalClock(pos_pts); //in msec. ignore usec part using t/1000
     d->read_thread->seek(pos_pts, seekType());
@@ -1105,7 +1113,7 @@ void AVPlayer::aboutToQuitApp()
         pause(false); // may be paused. then aboutToQuitApp will not finish
         stop();
     }
-    d->demuxer.setInterruptStatus(true);
+    d->demuxer.setInterruptStatus(-1);
     loaderThreadPool()->waitForDone();
 }
 
@@ -1203,6 +1211,8 @@ void AVPlayer::stop()
         qDebug("stopping demuxer thread...");
         d->read_thread->stop();
         d->read_thread->wait(500);
+        // interrupt to quit av_read_frame quickly.
+        d->demuxer.setInterruptStatus(-1);
     }
     qDebug("all audio/video threads  stopped...");
 }
@@ -1329,7 +1339,10 @@ BufferMode AVPlayer::bufferMode() const
 
 void AVPlayer::setBufferValue(int value)
 {
+    if (d->buffer_value == value)
+        return;
     d->buffer_value = value;
+    d->updateBufferValue();
 }
 
 int AVPlayer::bufferValue() const

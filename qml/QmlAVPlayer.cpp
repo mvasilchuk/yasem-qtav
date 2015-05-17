@@ -22,6 +22,7 @@
 #include "QmlAV/QmlAVPlayer.h"
 #include <QtAV/AVPlayer.h>
 #include <QtAV/AudioOutput.h>
+#include <QtAV/VideoCapture.h>
 
 template<typename ID, typename Factory>
 static QStringList idsToNames(QVector<ID> ids) {
@@ -72,10 +73,13 @@ QmlAVPlayer::QmlAVPlayer(QObject *parent) :
   , mChannelLayout(ChannelLayoutAuto)
   , m_timeout(30000)
 {
+    classBegin();
 }
 
 void QmlAVPlayer::classBegin()
 {
+    if (mpPlayer)
+        return;
     mpPlayer = new AVPlayer(this);
     connect(mpPlayer, SIGNAL(mediaStatusChanged(QtAV::MediaStatus)), SLOT(_q_statusChanged()));
     connect(mpPlayer, SIGNAL(error(QtAV::AVError)), SLOT(_q_error(QtAV::AVError)));
@@ -84,6 +88,7 @@ void QmlAVPlayer::classBegin()
     connect(mpPlayer, SIGNAL(stopped()), SLOT(_q_stopped()));
     connect(mpPlayer, SIGNAL(positionChanged(qint64)), SIGNAL(positionChanged()));
     connect(mpPlayer, SIGNAL(seekableChanged()), SIGNAL(seekableChanged()));
+    connect(mpPlayer, SIGNAL(seekFinished()), this, SIGNAL(seekFinished()), Qt::DirectConnection);
     connect(mpPlayer, SIGNAL(bufferProgressChanged(qreal)), SIGNAL(bufferProgressChanged()));
     connect(this, SIGNAL(channelLayoutChanged()), SLOT(applyChannelLayout()));
     // direct connection to ensure volume() in slots is correct
@@ -203,6 +208,11 @@ QObject* QmlAVPlayer::mediaObject() const
     return mpPlayer;
 }
 
+VideoCapture *QmlAVPlayer::videoCapture() const
+{
+    return mpPlayer->videoCapture();
+}
+
 QStringList QmlAVPlayer::videoCodecs() const
 {
     return VideoDecodersToNames(QtAV::GetRegistedVideoDecoderIds());
@@ -278,6 +288,21 @@ void QmlAVPlayer::setTimeout(int value)
 int QmlAVPlayer::timeout() const
 {
     return m_timeout;
+}
+
+void QmlAVPlayer::setAbortOnTimeout(bool value)
+{
+    if (m_abort_timeout == value)
+        return;
+    m_abort_timeout = value;
+    emit abortOnTimeoutChanged();
+    if (mpPlayer)
+        mpPlayer->setInterruptOnTimeout(value);
+}
+
+bool QmlAVPlayer::abortOnTimeout() const
+{
+    return m_abort_timeout;
 }
 
 QStringList QmlAVPlayer::videoCodecPriority() const
@@ -407,6 +432,7 @@ void QmlAVPlayer::setPlaybackState(PlaybackState playbackState)
             mpPlayer->pause(false);
         } else {
             mpPlayer->setInterruptTimeout(m_timeout);
+            mpPlayer->setInterruptOnTimeout(m_abort_timeout);
             mpPlayer->setRepeat(mLoopCount - 1);
             if (!vcodec_opt.isEmpty()) {
                 QVariantHash vcopt;
@@ -550,7 +576,7 @@ void QmlAVPlayer::_q_started()
     // applyChannelLayout() first because it may reopen audio device
     applyVolume(); //sender is AVPlayer
 
-    mpPlayer->setMute(isMuted());
+    mpPlayer->audio()->setMute(isMuted());
     mpPlayer->setSpeed(playbackRate());
     // TODO: in load()?
     m_metaData->setValuesFromStatistics(mpPlayer->statistics());

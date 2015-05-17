@@ -23,7 +23,6 @@
 #define QTAV_VIDEOSHADER_H
 
 #include <QtAV/VideoFrame.h>
-#include <QVector4D>
 #if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
 #include <QtGui/QOpenGLShaderProgram>
 #else
@@ -59,6 +58,7 @@ public:
      * \brief initialize
      * \param shaderProgram: 0 means create a shader program internally. if not linked, vertex/fragment shader will be added and linked
      */
+    // initialize(VideoMaterial*, QOpenGLShaderProgram*)
     virtual void initialize(QOpenGLShaderProgram* shaderProgram = 0);
     /*!
      * \brief textureLocationCount
@@ -75,8 +75,10 @@ public:
     int colorMatrixLocation() const;
     int bppLocation() const;
     int opacityLocation() const;
+    int channelMapLocation() const;
     VideoFormat videoFormat() const;
-    void setVideoFormat(const VideoFormat& format);
+    // defalut is GL_TEXTURE_2D
+    int textureTarget() const;
     QOpenGLShaderProgram* program();
     bool update(VideoMaterial* material);
 protected:
@@ -85,9 +87,12 @@ protected:
 
     VideoShader(VideoShaderPrivate &d);
     DPTR_DECLARE(VideoShader)
+private:
+    void setVideoFormat(const VideoFormat& format);
+    void setTextureTarget(int type);
+    friend class VideoMaterial;
 };
 
-class MaterialType {};
 class VideoMaterialPrivate;
 /*!
  * \brief The VideoMaterial class
@@ -103,7 +108,7 @@ public:
     void setCurrentFrame(const VideoFrame& frame);
     VideoFormat currentFormat() const;
     VideoShader* createShader() const;
-    virtual MaterialType* type() const;
+    virtual const char* type() const;
 
     bool bind(); // TODO: roi
     void unbind();
@@ -112,7 +117,7 @@ public:
     bool hasAlpha() const;
     const QMatrix4x4 &colorMatrix() const;
     const QMatrix4x4& matrix() const;
-    const QVector4D& channelMap(int channel) const;
+    const QMatrix4x4& channelMap() const;
     int bpp() const; //1st plane
     int planeCount() const;
     /*!
@@ -132,11 +137,20 @@ public:
     QSize frameSize() const;
     /*!
      * \brief normalizedROI
-     * \param roi logical roi of a video frame
-     * \return
-     * valid and normalized roi. \sa validTextureWidth()
+     * \param roi logical roi of a video frame.
+     * the same as mapToTexture(roi, 1)
      */
     QRectF normalizedROI(const QRectF& roi) const;
+    /*!
+     * \brief mapToFrame
+     * map a point p or a rect r to video texture in a given plane and scaled to valid width.
+     * p or r is in video frame's rect coordinates, no matter which plane is
+     * \param normalize -1: auto(do not normalize for rectangle texture). 0: no. 1: yes
+     * \return
+     * point or rect in current texture valid coordinates. \sa validTextureWidth()
+     */
+    QPointF mapToTexture(int plane, const QPointF& p, int normalize = -1) const;
+    QRectF mapToTexture(int plane, const QRectF& r, int normalize = -1) const;
     void setBrightness(qreal value);
     void setContrast(qreal value);
     void setHue(qreal value);
@@ -156,21 +170,45 @@ public:
         float tx, ty;
     } Point;
     enum Triangle { Strip, Fan };
-    TexturedGeometry(int count = 4, Triangle t = Strip);
+    TexturedGeometry(int texCount = 1, int count = 4, Triangle t = Strip);
+    /*!
+     * \brief setTextureCount
+     * sometimes we needs more than 1 texture coordinates, for example we have to set rectangle texture
+     * coordinates for each plane.
+     */
+    void setTextureCount(int value);
+    int textureCount() const;
+    /*!
+     * \brief size
+     * totoal data size in bytes
+     */
+    int size() const;
+    /*!
+     * \brief textureSize
+     * data size of 1 texture. equals textureVertexCount()*stride()
+     */
+    int textureSize() const;
     Triangle triangle() const { return tri;}
     int mode() const;
     int tupleSize() const { return 2;}
     int stride() const { return sizeof(Point); }
+    /// vertex count per texture
+    int textureVertexCount() const { return points_per_tex;}
+    /// totoal vertex count
     int vertexCount() const { return v.size(); }
-    void setPoint(int index, const QPointF& p, const QPointF& tp);
-    void setGeometryPoint(int index, const QPointF& p);
-    void setTexturePoint(int index, const QPointF& tp);
-    void setRect(const QRectF& r, const QRectF& tr);
-    void* data(int idx = 0) { return (char*)v.data() + idx*2*sizeof(float); } //convert to char* float*?
-    const void* data(int idx = 0) const { return (char*)v.constData() + idx*2*sizeof(float); }
-    const void* constData(int idx = 0) const { return (char*)v.constData() + idx*2*sizeof(float); }
+    void setPoint(int index, const QPointF& p, const QPointF& tp, int texIndex = 0);
+    void setGeometryPoint(int index, const QPointF& p, int texIndex = 0);
+    void setTexturePoint(int index, const QPointF& tp, int texIndex = 0);
+    void setRect(const QRectF& r, const QRectF& tr, int texIndex = 0);
+    void setGeometryRect(const QRectF& r, int texIndex = 0);
+    void setTextureRect(const QRectF& tr, int texIndex = 0);
+    void* data(int idx = 0, int texIndex = 0) { return (char*)v.data() + texIndex*textureSize() + idx*2*sizeof(float); } //convert to char* float*?
+    const void* data(int idx = 0, int texIndex = 0) const { return (char*)v.constData() + texIndex*textureSize() + idx*2*sizeof(float); }
+    const void* constData(int idx = 0, int texIndex = 0) const { return (char*)v.constData() + texIndex*textureSize() + idx*2*sizeof(float); }
 private:
     Triangle tri;
+    int points_per_tex;
+    int nb_tex;
     QVector<Point> v;
 };
 

@@ -49,7 +49,7 @@ public:
     bool isPaused() const;
     bool isEnd() const;
     PacketBuffer* buffer();
-
+    void updateBufferState();
 public slots:
     void stop(); //TODO: remove it?
     void pause(bool p);
@@ -59,6 +59,7 @@ Q_SIGNALS:
     void requestClockPause(bool value);
     void mediaStatusChanged(QtAV::MediaStatus);
     void bufferProgressChanged(qreal);
+    void seekFinished(qint64 timestamp);
 
 private slots:
     void frameDeliveredSeekOnPause();
@@ -84,7 +85,6 @@ private:
     bool user_paused;
     volatile bool end;
     bool m_buffering;
-    int m_buffered;
     PacketBuffer *m_buffer;
     AVDemuxer *demuxer;
     AVThread *audio_thread, *video_thread;

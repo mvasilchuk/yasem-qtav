@@ -65,8 +65,10 @@ Item {
     property alias fastSeek: player.fastSeek
     property alias opengl: videoOut.opengl
     property alias timeout: player.timeout
+    property alias abortOnTimeout: player.abortOnTimeout
     property alias subtitle: subtitle
     property alias subtitleText: text_sub // not for ass.
+    property alias videoCapture: player.videoCapture
     /*** Properties of VideoOutput ***/
     /*!
         \qmlproperty enumeration Video::fillMode
@@ -317,6 +319,8 @@ Item {
     */
     signal playing
 
+    signal seekFinished
+
     VideoOutput2 {
         id: videoOut
         anchors.fill: video
@@ -350,6 +354,7 @@ Item {
         onPaused:  video.paused()
         onStopped: video.stopped()
         onPlaying: video.playing()
+        onSeekFinished: video.seekFinished()
     }
 
     /*!

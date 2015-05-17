@@ -28,6 +28,7 @@
 #include <QmlAV/MediaMetaData.h>
 #include <QtAV/AVError.h>
 #include <QtAV/CommonTypes.h>
+#include <QtAV/VideoCapture.h>
 
 namespace QtAV {
 class AVPlayer;
@@ -54,7 +55,7 @@ class QmlAVPlayer : public QObject, public QQmlParserStatus
     Q_PROPERTY(qreal bufferProgress READ bufferProgress NOTIFY bufferProgressChanged)
     Q_PROPERTY(bool seekable READ isSeekable NOTIFY seekableChanged)
     Q_PROPERTY(MediaMetaData *metaData READ metaData CONSTANT)
-    Q_PROPERTY(QObject *mediaObject READ mediaObject)
+    Q_PROPERTY(QObject *mediaObject READ mediaObject  NOTIFY mediaObjectChanged SCRIPTABLE false DESIGNABLE false)
     Q_PROPERTY(QString errorString READ errorString NOTIFY errorChanged)
     Q_ENUMS(Loop)
     Q_ENUMS(PlaybackState)
@@ -64,10 +65,12 @@ class QmlAVPlayer : public QObject, public QQmlParserStatus
     // not supported by QtMultimedia
     Q_PROPERTY(bool fastSeek READ isFastSeek WRITE setFastSeek NOTIFY fastSeekChanged)
     Q_PROPERTY(int timeout READ timeout WRITE setTimeout NOTIFY timeoutChanged)
+    Q_PROPERTY(bool abortOnTimeout READ abortOnTimeout WRITE setAbortOnTimeout NOTIFY abortOnTimeoutChanged)
     Q_PROPERTY(ChannelLayout channelLayout READ channelLayout WRITE setChannelLayout NOTIFY channelLayoutChanged)
     Q_PROPERTY(QStringList videoCodecs READ videoCodecs)
     Q_PROPERTY(QStringList videoCodecPriority READ videoCodecPriority WRITE setVideoCodecPriority NOTIFY videoCodecPriorityChanged)
     Q_PROPERTY(QVariantMap videoCodecOptions READ videoCodecOptions WRITE setVideoCodecOptions NOTIFY videoCodecOptionsChanged)
+    Q_PROPERTY(QtAV::VideoCapture *videoCapture READ videoCapture CONSTANT)
 public:
     enum Loop { Infinite = -1 };
     enum PlaybackState {
@@ -76,13 +79,13 @@ public:
         PausedState
     };
     enum Status {
-        UnknownMediaStatus = QtAV::UnknownMediaStatus, // e.g. user status after interrupt
+        UnknownStatus = QtAV::UnknownMediaStatus, // e.g. user status after interrupt
         NoMedia = QtAV::NoMedia,
-        LoadingMedia = QtAV::LoadingMedia, // when source is set
-        LoadedMedia = QtAV::LoadedMedia, // if auto load and source is set. player is stopped state
-        StalledMedia = QtAV::StalledMedia,
-        BufferingMedia = QtAV::BufferingMedia,
-        BufferedMedia = QtAV::BufferedMedia, // when playing
+        Loading = QtAV::LoadingMedia, // when source is set
+        Loaded = QtAV::LoadedMedia, // if auto load and source is set. player is stopped state
+        Stalled = QtAV::StalledMedia,
+        Buffering = QtAV::BufferingMedia,
+        Buffered = QtAV::BufferedMedia, // when playing
         EndOfMedia = QtAV::EndOfMedia,
         InvalidMedia = QtAV::InvalidMedia
     };
@@ -152,6 +155,7 @@ public:
 
     MediaMetaData *metaData() const;
     QObject *mediaObject() const;
+    QtAV::VideoCapture *videoCapture() const;
 
     // "FFmpeg", "CUDA", "DXVA", "VAAPI" etc
     QStringList videoCodecs() const;
@@ -167,6 +171,8 @@ public:
 
     void setTimeout(int value); // ms
     int timeout() const;
+    void setAbortOnTimeout(bool value);
+    bool abortOnTimeout() const;
 public Q_SLOTS:
     void play();
     void pause();
@@ -195,12 +201,14 @@ Q_SIGNALS:
     void stopped();
     void playing();
     void seekableChanged();
+    void seekFinished();
     void fastSeekChanged();
     void bufferProgressChanged();
     void videoCodecPriorityChanged();
     void videoCodecOptionsChanged();
     void channelLayoutChanged();
     void timeoutChanged();
+    void abortOnTimeoutChanged();
 
     void errorChanged();
     void error(Error error, const QString &errorString);
@@ -239,6 +247,7 @@ private:
     QStringList mVideoCodecs;
     ChannelLayout mChannelLayout;
     int m_timeout;
+    bool m_abort_timeout;
 
     QScopedPointer<MediaMetaData> m_metaData;
     QVariantMap vcodec_opt;

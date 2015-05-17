@@ -215,6 +215,10 @@ int bytesOfGLFormat(GLenum format, GLenum dataType)
 {
     int component_size = 0;
     switch (dataType) {
+#ifdef GL_UNSIGNED_INT_8_8_8_8_REV
+    case GL_UNSIGNED_INT_8_8_8_8_REV:
+        return 4;
+#endif
 #ifdef GL_UNSIGNED_BYTE_3_3_2
     case GL_UNSIGNED_BYTE_3_3_2:
         return 1;
@@ -239,11 +243,25 @@ int bytesOfGLFormat(GLenum format, GLenum dataType)
     case GL_UNSIGNED_BYTE:
         component_size = 1;
         break;
+        // mpv returns 2
+#ifdef GL_UNSIGNED_SHORT_8_8_APPLE
+    case GL_UNSIGNED_SHORT_8_8_APPLE:
+    case GL_UNSIGNED_SHORT_8_8_REV_APPLE:
+        return 2;
+#endif
     case GL_UNSIGNED_SHORT:
         component_size = 2;
         break;
     }
     switch (format) {
+#ifdef GL_YCBCR_422_APPLE
+      case GL_YCBCR_422_APPLE:
+        return 2;
+#endif
+#ifdef GL_RGB_422_APPLE
+      case GL_RGB_422_APPLE:
+        return 2;
+#endif
 #ifdef GL_BGRA //ifndef GL_ES
       case GL_BGRA:
 #endif
@@ -255,6 +273,7 @@ int bytesOfGLFormat(GLenum format, GLenum dataType)
       case GL_RGB:
         return 3*component_size;
       case GL_LUMINANCE_ALPHA:
+        // mpv returns 2
         return 2*component_size;
       case GL_LUMINANCE:
       case GL_ALPHA:

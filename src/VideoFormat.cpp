@@ -20,6 +20,7 @@
 ******************************************************************************/
 
 #include "QtAV/VideoFormat.h"
+#include <cmath>
 #include <QtCore/QVector>
 #ifndef QT_NO_DEBUG_STREAM
 #include <QtDebug>
@@ -103,6 +104,11 @@ public:
     }
 
     void init() {
+        // FIXME: hack for invalid ffmpeg formats
+        if (pixfmt == VideoFormat::Format_VYUY) {
+            pixfmt_ff = QTAV_PIX_FMT_C(UYVY422);
+        }
+        // TODO: what if other formats not supported by ffmpeg? give attributes in QtAV?
         if (pixfmt_ff == QTAV_PIX_FMT_C(NONE)) {
             qWarning("Invalid pixel format");
             return;
@@ -611,6 +617,34 @@ int VideoFormat::chromaWidth(int lumaWidth) const
 int VideoFormat::chromaHeight(int lumaHeight) const
 {
     return -((-lumaHeight) >> d->pixdesc->log2_chroma_h);
+}
+
+int VideoFormat::width(int lumaWidth, int plane) const
+{
+    if (plane <= 0)
+        return lumaWidth;
+    return chromaWidth(lumaWidth);
+}
+
+int VideoFormat::height(int lumaHeight, int plane) const
+{
+    if (plane <= 0)
+        return lumaHeight;
+    return chromaHeight(lumaHeight);
+}
+
+qreal VideoFormat::normalizedWidth(int plane) const
+{
+    if (plane <= 0)
+        return 1.0;
+    return 1.0/std::pow(2.0, qreal(d->pixdesc->log2_chroma_w));
+}
+
+qreal VideoFormat::normalizedHeight(int plane) const
+{
+    if (plane <= 0)
+        return 1.0;
+    return 1.0/std::pow(2.0, qreal(d->pixdesc->log2_chroma_h));
 }
 
 // test AV_PIX_FMT_FLAG_XXX
