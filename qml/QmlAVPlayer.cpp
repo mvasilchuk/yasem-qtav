@@ -72,8 +72,6 @@ QmlAVPlayer::QmlAVPlayer(QObject *parent) :
   , mpPlayer(0)
   , mChannelLayout(ChannelLayoutAuto)
   , m_timeout(30000)
-  , m_abort_timeout(true)
-  , m_audio_track(0)
 {
     classBegin();
 }
@@ -83,8 +81,6 @@ void QmlAVPlayer::classBegin()
     if (mpPlayer)
         return;
     mpPlayer = new AVPlayer(this);
-    connect(mpPlayer, SIGNAL(internalAudioTracksChanged(QVariantList)), SIGNAL(internalAudioTracksChanged()));
-    connect(mpPlayer, SIGNAL(externalAudioTracksChanged(QVariantList)), SIGNAL(externalAudioTracksChanged()));
     connect(mpPlayer, SIGNAL(durationChanged(qint64)), SIGNAL(durationChanged()));
     connect(mpPlayer, SIGNAL(mediaStatusChanged(QtAV::MediaStatus)), SLOT(_q_statusChanged()));
     connect(mpPlayer, SIGNAL(error(QtAV::AVError)), SLOT(_q_error(QtAV::AVError)));
@@ -170,6 +166,8 @@ void QmlAVPlayer::setSource(const QUrl &url)
         stop();
         //mpPlayer->load(); //QtAV internal bug: load() or play() results in reload
         if (mAutoPlay) {
+            //mPlaybackState is actually changed in slots. But if set to a new source the state may not change before call play()
+            mPlaybackState = StoppedState;
             play();
         }
     }
@@ -469,8 +467,7 @@ void QmlAVPlayer::setPlaybackState(PlaybackState playbackState)
     }
     if (!m_complete || !mpPlayer)
         return;
-    mPlaybackState = playbackState;
-    switch (mPlaybackState) {
+    switch (playbackState) {
     case PlayingState:
         if (mpPlayer->isPaused()) {
             mpPlayer->pause(false);
@@ -478,7 +475,6 @@ void QmlAVPlayer::setPlaybackState(PlaybackState playbackState)
             mpPlayer->setInterruptTimeout(m_timeout);
             mpPlayer->setInterruptOnTimeout(m_abort_timeout);
             mpPlayer->setRepeat(mLoopCount - 1);
-            mpPlayer->setAudioStream(m_audio_track);
             if (!vcodec_opt.isEmpty()) {
                 QVariantHash vcopt;
                 for (QVariantMap::const_iterator cit = vcodec_opt.cbegin(); cit != vcodec_opt.cend(); ++cit) {
@@ -538,6 +534,7 @@ void QmlAVPlayer::play()
 void QmlAVPlayer::pause()
 {
     setPlaybackState(PausedState);
+    mPlaybackState = PausedState;
 }
 
 void QmlAVPlayer::stop()
