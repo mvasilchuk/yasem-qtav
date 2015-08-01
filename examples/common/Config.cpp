@@ -22,6 +22,7 @@
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
+#include <QtCore/QMetaEnum>
 #if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
 #include <QtGui/QDesktopServices>
 #else
@@ -78,6 +79,7 @@ public:
         subtitle_autoload = settings.value("autoLoad", true).toBool();
         subtitle_enabled = settings.value("enabled", true).toBool();
         subtitle_engines = settings.value("engines", QStringList() << "FFmpeg" << "LibASS").toStringList();
+        subtitle_delay = settings.value("delay", 0.0).toInt();
         QFont f;
         f.setPointSize(20);
         f.setBold(true);
@@ -108,13 +110,17 @@ public:
         avfilterAudio = settings.value("options", "").toString();
         settings.endGroup();
         settings.beginGroup("opengl");
-        angle = settings.value("angle", false).toBool();
+        const QString glname = settings.value("type", "OpenGLES").toString();
+        opengl = (Config::OpenGLType)Config::staticMetaObject.enumerator(Config::staticMetaObject.indexOfEnumerator("OpenGLType")).keysToValue(glname.toLatin1().constData());
+        // d3d11 bad performance (gltexsubimage2d)
+        angle_dx = settings.value("angle_platform", "d3d9").toString();
         settings.endGroup();
 
         settings.beginGroup("buffer");
         buffer_value = settings.value("value", -1).toInt();
         settings.endGroup();
     }
+
     void save() {
         qDebug() << "sync config to " << file;
         QSettings settings(file, QSettings::IniFormat);
@@ -136,6 +142,7 @@ public:
         settings.setValue("enabled", subtitle_enabled);
         settings.setValue("autoLoad", subtitle_autoload);
         settings.setValue("engines", subtitle_engines);
+        settings.setValue("delay", subtitle_delay);
         settings.setValue("font", subtitle_font);
         settings.setValue("color", subtitle_color);
         settings.setValue("outline_color", subtitle_outline_color);
@@ -163,7 +170,9 @@ public:
         settings.setValue("options", avfilterAudio);
         settings.endGroup();
         settings.beginGroup("opengl");
-        settings.setValue("angle", angle);
+        const char* glname = Config::staticMetaObject.enumerator(Config::staticMetaObject.indexOfEnumerator("OpenGLType")).valueToKey(opengl);
+        settings.setValue("type", glname);
+        settings.setValue("angle_platform", angle_dx);
         settings.endGroup();
         settings.beginGroup("buffer");
         settings.setValue("value", buffer_value);
@@ -198,11 +207,13 @@ public:
     QColor subtitle_color, subtitle_outline_color;
     bool subtitle_outline;
     int subtilte_bottom_margin;
+    qreal subtitle_delay;
 
     bool preview_enabled;
     int preview_w, preview_h;
 
-    bool angle;
+    Config::OpenGLType opengl;
+    QString angle_dx;
     bool abort_timeout;
     qreal timeout;
     int buffer_value;
@@ -437,6 +448,20 @@ Config& Config::setSubtitleBottomMargin(int value)
     return *this;
 }
 
+qreal Config::subtitleDelay() const
+{
+    return mpData->subtitle_delay;
+}
+
+Config& Config::setSubtitleDelay(qreal value)
+{
+    if (mpData->subtitle_delay == value)
+        return *this;
+    mpData->subtitle_delay = value;
+    Q_EMIT subtitleDelayChanged();
+    return *this;
+}
+
 bool Config::previewEnabled() const
 {
     return mpData->preview_enabled;
@@ -618,17 +643,31 @@ Config& Config::avfilterAudioEnable(bool e)
     return *this;
 }
 
-bool Config::isANGLE() const
+Config::OpenGLType Config::openGLType() const
 {
-    return mpData->angle;
+    return mpData->opengl;
 }
 
-Config& Config::setANGLE(bool value)
+Config& Config::setOpenGLType(OpenGLType value)
 {
-    if (mpData->angle == value)
+    if (mpData->opengl == value)
         return *this;
-    mpData->angle = value;
-    emit ANGLEChanged();
+    mpData->opengl = value;
+    emit openGLTypeChanged();
+    return *this;
+}
+
+QString Config::getANGLEPlatform() const
+{
+    return mpData->angle_dx;
+}
+
+Config& Config::setANGLEPlatform(const QString& value)
+{
+    if (mpData->angle_dx == value)
+        return *this;
+    mpData->angle_dx = value;
+    emit ANGLEPlatformChanged();
     return *this;
 }
 
