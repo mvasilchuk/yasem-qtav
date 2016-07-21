@@ -31,6 +31,9 @@ isEmpty(QMAKE_EXTENSION_SHLIB) {
 }
 
 CONFIG += profile
+
+CONFIG += c++11
+
 #profiling, -pg is not supported for msvc
 debug:!android:!*msvc*:profile {
 	QMAKE_CXXFLAGS_DEBUG += -pg

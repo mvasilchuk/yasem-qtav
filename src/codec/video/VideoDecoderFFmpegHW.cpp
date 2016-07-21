@@ -194,7 +194,7 @@ AVPixelFormat VideoDecoderFFmpegHWPrivate::getFormat(struct AVCodecContext *p_co
     if (p_context->level != FF_LEVEL_UNKNOWN)
         p_dec->fmt_in.i_level = p_context->level;
 #endif
-    for (size_t i = 0; pi_fmt[i] != PIX_FMT_NONE; i++) {
+    for (size_t i = 0; pi_fmt[i] != AV_PIX_FMT_NONE; i++) {
         if (vaPixelFormat() != pi_fmt[i])
             continue;
 
