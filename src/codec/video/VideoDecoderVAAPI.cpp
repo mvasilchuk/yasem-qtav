@@ -37,12 +37,6 @@ extern "C" {
 #include "vaapi/SurfaceInteropVAAPI.h"
 #include "utils/Logger.h"
 
-// TODO: add to AVCompat.h?
-// FF_API_PIX_FMT
-#ifdef PixelFormat
-#undef PixelFormat
-#endif
-
 #define VERSION_CHK(major, minor, patch) \
     (((major&0xff)<<16) | ((minor&0xff)<<8) | (patch&0xff))
 
@@ -68,9 +62,9 @@ public:
         DRM
     };
     VideoDecoderVAAPI();
-    virtual VideoDecoderId id() const;
-    virtual QString description() const;
-    virtual VideoFrame frame();
+    VideoDecoderId id() const Q_DECL_OVERRIDE;
+    QString description() const Q_DECL_OVERRIDE;
+    VideoFrame frame() Q_DECL_OVERRIDE;
 
     // QObject properties
     void setDerive(bool y);
@@ -151,8 +145,11 @@ const codec_profile_t* findProfileEntry(AVCodecID codec, int profile)
     return 0;
 }
 
-class VideoDecoderVAAPIPrivate : public VideoDecoderFFmpegHWPrivate, public VAAPI_DRM, public VAAPI_X11, public VAAPI_GLX
-        , public X11_API
+class VideoDecoderVAAPIPrivate Q_DECL_FINAL: public VideoDecoderFFmpegHWPrivate, protected VAAPI_DRM, protected VAAPI_X11
+#ifndef QT_NO_OPENGL
+        , protected VAAPI_GLX
+#endif //QT_NO_OPENGL
+        , protected X11_API
 {
     DPTR_DECLARE_PUBLIC(VideoDecoderVAAPI)
 public:
@@ -161,18 +158,19 @@ public:
     {
         if (VAAPI_DRM::isLoaded())
             display_type = VideoDecoderVAAPI::DRM;
-        if (VAAPI_GLX::isLoaded())
+#ifndef QT_NO_OPENGL
+        if (VAAPI_GLX::isLoaded()) {
             display_type = VideoDecoderVAAPI::GLX;
-        if (VAAPI_X11::isLoaded())
+            copy_mode = VideoDecoderFFmpegHW::ZeroCopy;
+        }
+#endif //QT_NO_OPENGL
+        if (VAAPI_X11::isLoaded()) {
             display_type = VideoDecoderVAAPI::X11;
-        if (display_type == VideoDecoderVAAPI::DRM) {
-            copy_mode = VideoDecoderFFmpegHW::OptimizedCopy;
-        } else {
+#ifndef QT_NO_OPENGL
 #if VA_X11_INTEROP
             copy_mode = VideoDecoderFFmpegHW::ZeroCopy;
-#else
-            copy_mode = VideoDecoderFFmpegHW::OptimizedCopy;
 #endif //VA_X11_INTEROP
+#endif //QT_NO_OPENGL
         }
         drm_fd = -1;
         display_x11 = 0;
@@ -189,15 +187,15 @@ public:
         nb_surfaces = 0;
         disable_derive = true;
     }
-    virtual bool open();
-    virtual void close();
+    bool open() Q_DECL_OVERRIDE;
+    void close() Q_DECL_OVERRIDE;
     bool createSurfaces(int count, void **hwctx, int w, int h);
     void destroySurfaces();
 
-    virtual bool setup(AVCodecContext *avctx);
-    virtual bool getBuffer(void **opaque, uint8_t **data);
-    virtual void releaseBuffer(void *opaque, uint8_t *data);
-    virtual AVPixelFormat vaPixelFormat() const { return QTAV_PIX_FMT_C(VAAPI_VLD); }
+    bool setup(AVCodecContext *avctx) Q_DECL_OVERRIDE;
+    bool getBuffer(void **opaque, uint8_t **data) Q_DECL_OVERRIDE;
+    void releaseBuffer(void *opaque, uint8_t *data) Q_DECL_OVERRIDE;
+    AVPixelFormat vaPixelFormat() const Q_DECL_OVERRIDE { return QTAV_PIX_FMT_C(VAAPI_VLD); }
 
     bool support_4k;
     VideoDecoderVAAPI::DisplayType display_type;
@@ -231,10 +229,10 @@ public:
 VideoDecoderVAAPI::VideoDecoderVAAPI()
     : VideoDecoderFFmpegHW(*new VideoDecoderVAAPIPrivate())
 {
-    setDisplayPriority(QStringList() << "X11" << "GLX" <<  "DRM");
+    setDisplayPriority(QStringList() << QStringLiteral("X11") << QStringLiteral("GLX") <<  QStringLiteral("DRM"));
     // dynamic properties about static property details. used by UI
     // format: detail_property
-    setProperty("detail_surfaces", tr("Decoding surfaces.") + " " + tr("0: auto"));
+    setProperty("detail_surfaces", tr("Decoding surfaces.") + QStringLiteral(" ") + tr("0: auto"));
     setProperty("detail_derive", tr("Maybe faster if display is not GLX"));
     setProperty("detail_display", tr("GLX is fastest. No data copyback from gpu."));
 }
@@ -248,7 +246,7 @@ QString VideoDecoderVAAPI::description() const
 {
     if (!d_func().description.isEmpty())
         return d_func().description;
-    return "Video Acceleration API";
+    return QStringLiteral("Video Acceleration API");
 }
 
 void VideoDecoderVAAPI::setDerive(bool y)
@@ -325,8 +323,9 @@ VideoFrame VideoDecoderVAAPI::frame()
 
         VideoFrame f(d.width, d.height, VideoFormat::Format_RGB32); //p->width()
         f.setBytesPerLine(d.width*4); //used by gl to compute texture size
-        f.setMetaData("surface_interop", QVariant::fromValue(VideoSurfaceInteropPtr(interop)));
+        f.setMetaData(QStringLiteral("surface_interop"), QVariant::fromValue(VideoSurfaceInteropPtr(interop)));
         f.setTimestamp(double(d.frame->pkt_pts)/1000.0);
+        f.setDisplayAspectRatio(d.getDAR(d.frame));
 
         ColorSpace cs = colorSpaceFromFFmpeg(av_frame_get_colorspace(d.frame));
         if (cs != ColorSpace_Unknow)
@@ -416,13 +415,15 @@ QStringList VideoDecoderVAAPI::displayPriority() const
     int idx = staticMetaObject.indexOfEnumerator("DisplayType");
     const QMetaEnum me = staticMetaObject.enumerator(idx);
     foreach (DisplayType disp, d_func().display_priority) {
-        names.append(me.valueToKey(disp));
-    }    
+        names.append(QString::fromLatin1(me.valueToKey(disp)));
+    }
     return names;
 }
 
 bool VideoDecoderVAAPIPrivate::open()
 {
+    if (!prepare())
+        return false;
     const codec_profile_t* pe = findProfileEntry(codec_ctx->codec_id, codec_ctx->profile);
     // TODO: allow wrong profile
     // FIXME: sometimes get wrong profile (switch copyMode)
@@ -474,6 +475,7 @@ bool VideoDecoderVAAPIPrivate::open()
             display_type = VideoDecoderVAAPI::X11;
         } else if (dt == VideoDecoderVAAPI::GLX) {
             qDebug("vaGetDisplay GLX...............");
+#ifndef QT_NO_OPENGL
             if (!VAAPI_GLX::isLoaded())
                 continue;
             // TODO: lock
@@ -488,6 +490,9 @@ bool VideoDecoderVAAPIPrivate::open()
             }
             disp = vaGetDisplayGLX(display_x11);
             display_type = VideoDecoderVAAPI::GLX;
+#else
+            qWarning("No OpenGL support in Qt");
+#endif //QT_NO_OPENGL
         }
         if (disp)
             break;
@@ -501,16 +506,16 @@ bool VideoDecoderVAAPIPrivate::open()
         qWarning("Failed to initialize the VAAPI device");
         return false;
     }
-    vendor = vaQueryVendorString(disp);
-    //if (!vendor.toLower().contains("intel"))
+    vendor = QString::fromLatin1(vaQueryVendorString(disp));
+    //if (!vendor.toLower().contains(QLatin1Strin("intel")))
       //  copy_uswc = false;
 
     //disable_derive = !copy_uswc;
-    description = QString("VA API version %1.%2; Vendor: %3;").arg(version_major).arg(version_minor).arg(vendor);
+    description = QObject::tr("VA API version %1.%2; Vendor: %3;").arg(version_major).arg(version_minor).arg(vendor);
     DPTR_P(VideoDecoderVAAPI);
     int idx = p.staticMetaObject.indexOfEnumerator("DisplayType");
     const QMetaEnum me = p.staticMetaObject.enumerator(idx);
-    description += " Display: " + QString(me.valueToKey(display_type));
+    description += QStringLiteral(" Display: ") + QString::fromLatin1(me.valueToKey(display_type));
     // check 4k support. from xbmc
     int major, minor, micro;
     if (sscanf(vendor.toUtf8().constData(), "Intel i965 driver - %d.%d.%d", &major, &minor, &micro) == 3) {
@@ -552,10 +557,12 @@ bool VideoDecoderVAAPIPrivate::open()
     //vaCreateConfig(display, pe->va_profile, VAEntrypointVLD, NULL, 0, &config_id)
     VA_ENSURE_TRUE(vaCreateConfig(disp, pe->va_profile, VAEntrypointVLD, &attrib, 1, &config_id), false);
     supports_derive = false;
+#ifndef QT_NO_OPENGL
     if (display_type == VideoDecoderVAAPI::GLX)
         interop_res = InteropResourcePtr(new GLXInteropResource());
+#endif //QT_NO_OPENGL
 #if VA_X11_INTEROP
-    else if (display_type == VideoDecoderVAAPI::X11)
+    if (display_type == VideoDecoderVAAPI::X11)
         interop_res = InteropResourcePtr(new X11InteropResource());
 #endif //VA_X11_INTEROP
     return true;

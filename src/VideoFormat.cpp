@@ -30,11 +30,6 @@ extern "C" {
 #include <libavutil/imgutils.h>
 }
 
-// FF_API_PIX_FMT
-#ifdef PixelFormat
-#undef PixelFormat
-#endif
-
 #define FF_HAS_YUV12BITS FFMPEG_MODULE_CHECK(LIBAVUTIL, 51, 73, 101)
 #if (Q_BYTE_ORDER == Q_BIG_ENDIAN)
 #define PIXFMT_NE(B, L) VideoFormat::Format_##B
@@ -52,9 +47,6 @@ public:
         : pixfmt(fmt)
         , pixfmt_ff(QTAV_PIX_FMT_C(NONE))
         , qpixfmt(QImage::Format_Invalid)
-        , planes(0)
-        , bpps(4)
-        , bpps_pad(4)
         , pixdesc(0)
     {
         if (fmt == VideoFormat::Format_Invalid) {
@@ -68,8 +60,6 @@ public:
         : pixfmt(VideoFormat::Format_Invalid)
         , pixfmt_ff(fmt)
         , qpixfmt(QImage::Format_Invalid)
-        , bpps(4)
-        , bpps_pad(4)
         , pixdesc(0)
     {
         init(fmt);
@@ -78,8 +68,6 @@ public:
         : pixfmt(VideoFormat::Format_Invalid)
         , pixfmt_ff(QTAV_PIX_FMT_C(NONE))
         , qpixfmt(fmt)
-        , bpps(4)
-        , bpps_pad(4)
         , pixdesc(0)
     {
         init(fmt);
@@ -116,13 +104,14 @@ public:
         planes = qMax(av_pix_fmt_count_planes(pixfmt_ff), 0);
         bpps.resize(planes);
         bpps_pad.resize(planes);
+        channels.resize(planes);
         pixdesc = const_cast<AVPixFmtDescriptor*>(av_pix_fmt_desc_get(pixfmt_ff));
         if (!pixdesc)
             return;
         initBpp();
     }
     QString name() const {
-        return av_get_pix_fmt_name(pixfmt_ff);
+        return QLatin1String(av_get_pix_fmt_name(pixfmt_ff));
     }
     int flags() const {
         if (!pixdesc)
@@ -136,11 +125,13 @@ public:
     VideoFormat::PixelFormat pixfmt;
     AVPixelFormat pixfmt_ff;
     QImage::Format qpixfmt;
-    int planes;
-    int bpp;
-    int bpp_pad;
+    quint8 planes;
+    quint8 bpp;
+    quint8 bpp_pad;
+    quint8 bpc;
     QVector<int> bpps;
     QVector<int> bpps_pad; //TODO: is it needed?
+    QVector<int> channels;
 
     AVPixFmtDescriptor *pixdesc;
 private:
@@ -149,18 +140,22 @@ private:
         //TODO: call later when bpp need
         bpp = 0;
         bpp_pad = 0;
+        bpc = pixdesc->comp[0].depth_minus1+1;
         int log2_pixels = pixdesc->log2_chroma_w + pixdesc->log2_chroma_h;
         for (int c = 0; c < pixdesc->nb_components; c++) {
             const AVComponentDescriptor *comp = &pixdesc->comp[c];
             int s = c == 1 || c == 2 ? 0 : log2_pixels; //?
             bpps[comp->plane] = (comp->depth_minus1 + 1) << s;
             bpps_pad[comp->plane] = (comp->step_minus1 + 1) << s;
+            channels[comp->plane] += 1;
             if(!(pixdesc->flags & AV_PIX_FMT_FLAG_BITSTREAM))
                 bpps_pad[comp->plane] *= 8;
             bpp += bpps[comp->plane];
             bpp_pad += bpps_pad[comp->plane];
             bpps[comp->plane] >>= s;
             bpps_pad[comp->plane] >>= s;
+            if (comp->depth_minus1+1 != bpc)
+                bpc = 0;
         }
         bpp >>= log2_pixels;
         bpp_pad >>= log2_pixels;
@@ -314,20 +309,22 @@ static const struct {
 #if (FFMPEG_MODULE_CHECK(LIBAVUTIL, 52, 75, 100) || LIBAV_MODULE_CHECK(LIBAVUTIL, 53, 11, 0))
     { VideoFormat::Format_YVYU, QTAV_PIX_FMT_C(YVYU422) },
 #endif
-/*
-#ifndef QTAV_PIX_FMT_C(ABI_GIT_MASTER
-    QTAV_PIX_FMT_C(RGBA64BE=0x123,  ///< packed RGBA 16:16:16:16, 64bpp, 16R, 16G, 16B, 16A, the 2-byte value for each R/G/B/A component is stored as big-endian
-    QTAV_PIX_FMT_C(RGBA64LE,  ///< packed RGBA 16:16:16:16, 64bpp, 16R, 16G, 16B, 16A, the 2-byte value for each R/G/B/A component is stored as little-endian
-    QTAV_PIX_FMT_C(BGRA64BE,  ///< packed RGBA 16:16:16:16, 64bpp, 16B, 16G, 16R, 16A, the 2-byte value for each R/G/B/A component is stored as big-endian
-    QTAV_PIX_FMT_C(BGRA64LE,  ///< packed RGBA 16:16:16:16, 64bpp, 16B, 16G, 16R, 16A, the 2-byte value for each R/G/B/A component is stored as little-endian
+// 2014-03-16 - 6b1ca17 / 1481d24 - lavu 52.67.100 / 53.6.0 before ffmpeg2.2 libav11 RGBA64_LIBAV
+#if (QTAV_USE_FFMPEG(LIBAVUTIL) || LIBAV_MODULE_CHECK(LIBAVUTIL, 53, 6, 0))
+    { VideoFormat::Format_RGBA64BE, QTAV_PIX_FMT_C(RGBA64BE)},  ///< packed RGBA 16:16:16:16, 64bpp, 16R, 16G, 16B, 16A, the 2-byte value for each R/G/B/A component is stored as big-endian
+    { VideoFormat::Format_RGBA64LE, QTAV_PIX_FMT_C(RGBA64LE)},  ///< packed RGBA 16:16:16:16, 64bpp, 16R, 16G, 16B, 16A, the 2-byte value for each R/G/B/A component is stored as little-endian
+    { VideoFormat::Format_BGRA64BE, QTAV_PIX_FMT_C(BGRA64BE)},  ///< packed RGBA 16:16:16:16, 64bpp, 16B, 16G, 16R, 16A, the 2-byte value for each R/G/B/A component is stored as big-endian
+    { VideoFormat::Format_BGRA64LE, QTAV_PIX_FMT_C(BGRA64LE)},  ///< packed RGBA 16:16:16:16, 64bpp, 16B, 16G, 16R, 16A, the 2-byte value for each R/G/B/A component is stored as little-endian
 #endif
-    QTAV_PIX_FMT_C(0RGB=0x123+4,      ///< packed RGB 8:8:8, 32bpp, 0RGB0RGB...
-    QTAV_PIX_FMT_C(RGB0,      ///< packed RGB 8:8:8, 32bpp, RGB0RGB0...
-    QTAV_PIX_FMT_C(0BGR,      ///< packed BGR 8:8:8, 32bpp, 0BGR0BGR...
-    QTAV_PIX_FMT_C(BGR0,      ///< packed BGR 8:8:8, 32bpp, BGR0BGR0...
-    QTAV_PIX_FMT_C(YUVA444P,  ///< planar YUV 4:4:4 32bpp, (1 Cr & Cb sample per 1x1 Y & A samples)
-    QTAV_PIX_FMT_C(YUVA422P,  ///< planar YUV 4:2:2 24bpp, (1 Cr & Cb sample per 2x1 Y & A samples)
-*/
+#if QTAV_USE_FFMPEG(LIBAVUTIL) //still use rgba formats but check hasAplha is required
+    { VideoFormat::Format_ARGB32, QTAV_PIX_FMT_C(0RGB)},      ///< packed RGB 8:8:8, 32bpp, 0RGB0RGB...
+    { VideoFormat::Format_RGBA32, QTAV_PIX_FMT_C(RGB0)},      ///< packed RGB 8:8:8, 32bpp, RGB0RGB0...
+    { VideoFormat::Format_ABGR32, QTAV_PIX_FMT_C(0BGR)},      ///< packed BGR 8:8:8, 32bpp, 0BGR0BGR...
+    { VideoFormat::Format_BGRA32, QTAV_PIX_FMT_C(BGR0)},      ///< packed BGR 8:8:8, 32bpp, BGR0BGR0...
+#endif //
+    //QTAV_PIX_FMT_C(YUVA444P,  ///< planar YUV 4:4:4 32bpp, (1 Cr & Cb sample per 1x1 Y & A samples)
+    //QTAV_PIX_FMT_C(YUVA422P,  ///< planar YUV 4:2:2 24bpp, (1 Cr & Cb sample per 2x1 Y & A samples)
+
 #if FF_HAS_YUV12BITS
     { VideoFormat::Format_YUV420P12BE, QTAV_PIX_FMT_C(YUV420P12BE) }, ///< planar YUV 4:2:0,18bpp, (1 Cr & Cb sample per 2x2 Y samples), big-endian
     { VideoFormat::Format_YUV420P12LE, QTAV_PIX_FMT_C(YUV420P12LE) }, ///< planar YUV 4:2:0,18bpp, (1 Cr & Cb sample per 2x2 Y samples), little-endian
@@ -354,7 +351,10 @@ static const struct {
     { VideoFormat::Format_BGR32, QTAV_PIX_FMT_C(BGR32) }, //auto endian
     { VideoFormat::Format_RGB48, QTAV_PIX_FMT_C(RGB48) },   ///< packed RGB 16:16:16, 48bpp, 16R, 16G, 16B, the 2-byte value for each R/G/B component is stored as big-endian
     { VideoFormat::Format_BGR48, QTAV_PIX_FMT_C(BGR48) },   ///< packed RGB 16:16:16, 48bpp, 16B, 16G, 16R, the 2-byte value for each R/G/B component is stored as big-endian
-
+#if QTAV_USE_FFMPEG(LIBAVUTIL)
+    { VideoFormat::Format_RGBA64, QTAV_PIX_FMT_C(RGBA64) },
+    { VideoFormat::Format_BGRA64, QTAV_PIX_FMT_C(BGRA64) },
+#endif //QTAV_USE_FFMPEG(LIBAVUTIL)
     { VideoFormat::Format_Invalid, QTAV_PIX_FMT_C(NONE) },
 };
 
@@ -395,8 +395,11 @@ static const struct {
     { VideoFormat::Format_RGBA32, QImage::Format_RGBA8888 }, //be 0xRRGGBBAA, le 0xAABBGGRR
 #endif
     { VideoFormat::Format_RGB565, QImage::Format_RGB16 },
+    { VideoFormat::Format_BGR565, (QImage::Format)-QImage::Format_RGB16 },
     { VideoFormat::Format_RGB555, QImage::Format_RGB555 },
+    { VideoFormat::Format_BGR555, (QImage::Format)-QImage::Format_RGB555 },
     { VideoFormat::Format_RGB24, QImage::Format_RGB888 },
+    { VideoFormat::Format_BGR24, (QImage::Format)-QImage::Format_RGB888 },
     { VideoFormat::Format_Invalid, QImage::Format_Invalid }
 };
 
@@ -564,6 +567,13 @@ int VideoFormat::channels() const
     return d->pixdesc->nb_components;
 }
 
+int VideoFormat::channels(int plane) const
+{
+    if (plane > d->channels.size())
+        return 0;
+    return d->channels[plane];
+}
+
 int VideoFormat::planeCount() const
 {
     return d->planes;
@@ -602,6 +612,11 @@ int VideoFormat::bytesPerPixel() const
 int VideoFormat::bytesPerPixel(int plane) const
 {
     return (bitsPerPixel(plane) + 7) >> 3;
+}
+
+int VideoFormat::bitsPerComponent() const
+{
+    return d->bpc;
 }
 
 int VideoFormat::bytesPerLine(int width, int plane) const
@@ -706,6 +721,8 @@ bool VideoFormat::isRGB(PixelFormat pixfmt)
         || pixfmt == Format_BGR24 || pixfmt == Format_BGR32 || pixfmt == Format_BGR555
         || pixfmt == Format_RGB48 || pixfmt == Format_RGB48LE || pixfmt == Format_RGB48BE
         || pixfmt == Format_BGR48 || pixfmt == Format_BGR48LE || pixfmt == Format_BGR48BE
+        || pixfmt == Format_RGBA64 || pixfmt == Format_RGBA64LE || pixfmt == Format_RGBA64BE
+        || pixfmt == Format_BGRA64 || pixfmt == Format_BGRA64LE || pixfmt == Format_BGRA64BE
             ;
 }
 
@@ -720,7 +737,7 @@ bool VideoFormat::hasAlpha(PixelFormat pixfmt)
 #ifndef QT_NO_DEBUG_STREAM
 QDebug operator<<(QDebug dbg, const VideoFormat &fmt)
 {
-    dbg.nospace() << "QtAV::VideoFormat(pixelFormat: " << (int)fmt.pixelFormat() << " " << fmt.name();
+    dbg.nospace() << "QtAV::VideoFormat(pixelFormat: " << (int)fmt.pixelFormat() << " " << fmt.name() << " has alpha: " << fmt.hasAlpha();
     dbg.nospace() << ", channels: " << fmt.channels();
     dbg.nospace() << ", planes: " << fmt.planeCount();
     dbg.nospace() << ", bitsPerPixel: " << fmt.bitsPerPixel();

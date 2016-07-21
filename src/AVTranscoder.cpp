@@ -23,6 +23,7 @@
 #include "QtAV/AVPlayer.h"
 #include "QtAV/AVMuxer.h"
 #include "QtAV/EncodeFilter.h"
+#include "QtAV/Statistics.h"
 #include "utils/BlockingQueue.h"
 #include "utils/Logger.h"
 
@@ -73,9 +74,12 @@ void AVTranscoder::setMediaSource(AVPlayer *player)
 {
     if (d->source_player) {
         disconnect(d->source_player, SIGNAL(stopped()), this, SLOT(stop()));
+        disconnect(d->source_player, SIGNAL(started()), this, SLOT(onSourceStarted()));
     }
     d->source_player = player;
     connect(d->source_player, SIGNAL(stopped()), this, SLOT(stop()));
+    // direct connect to ensure it's called before encoders open in filters
+    connect(d->source_player, SIGNAL(started()), this, SLOT(onSourceStarted()), Qt::DirectConnection);
 }
 
 AVPlayer* AVTranscoder::sourcePlayer() const
@@ -175,6 +179,21 @@ bool AVTranscoder::isRunning() const
     return d->started;
 }
 
+bool AVTranscoder::isPaused() const
+{
+    if (d->vfilter) {
+        if (d->vfilter->isEnabled())
+            return false;
+        return true;
+    }
+    if (d->afilter) {
+        if (d->afilter->isEnabled())
+            return false;
+        return true;
+    }
+    return false; //stopped
+}
+
 void AVTranscoder::start()
 {
     if (!videoEncoder())
@@ -184,10 +203,16 @@ void AVTranscoder::start()
     d->encoded_frames = 0;
     d->started = true;
     if (sourcePlayer()) {
-        if (d->afilter)
+        if (d->afilter) {
             sourcePlayer()->installAudioFilter(d->afilter);
-        if (d->vfilter)
+        }
+        if (d->vfilter) {
+            qDebug("framerate: %.3f/%.3f", videoEncoder()->frameRate(), sourcePlayer()->statistics().video.frame_rate);
+            if (videoEncoder()->frameRate() <= 0) { // use source frame rate. set before install filter (so before open)
+                videoEncoder()->setFrameRate(sourcePlayer()->statistics().video.frame_rate);
+            }
             sourcePlayer()->installVideoFilter(d->vfilter);
+        }
     }
     Q_EMIT started();
 }
@@ -198,26 +223,50 @@ void AVTranscoder::stop()
         return;
     if (!d->muxer.isOpen())
         return;
-    // get delayed frames. call VideoEncoder.encode() directly instead of through filter
-    while (audioEncoder()->encode()) {
-        qDebug("encode delayed audio frames...");
-        Packet pkt(audioEncoder()->encoded());
-        d->muxer.writeAudio(pkt);
-    }
-    while (videoEncoder()->encode()) {
-        qDebug("encode delayed video frames...");
-        Packet pkt(videoEncoder()->encoded());
-        d->muxer.writeVideo(pkt);
-    }
+    // uninstall encoder filters first then encoders can be closed safely
     if (sourcePlayer()) {
         sourcePlayer()->uninstallFilter(d->afilter);
         sourcePlayer()->uninstallFilter(d->vfilter);
     }
-    audioEncoder()->close();
-    videoEncoder()->close();
+    // get delayed frames. call VideoEncoder.encode() directly instead of through filter
+    if (audioEncoder()) {
+        while (audioEncoder()->encode()) {
+            qDebug("encode delayed audio frames...");
+            Packet pkt(audioEncoder()->encoded());
+            d->muxer.writeAudio(pkt);
+        }
+        audioEncoder()->close();
+    }
+    if (videoEncoder()) {
+        while (videoEncoder()->encode()) {
+            qDebug("encode delayed video frames...");
+            Packet pkt(videoEncoder()->encoded());
+            d->muxer.writeVideo(pkt);
+        }
+        videoEncoder()->close();
+    }
     d->muxer.close();
     d->started = false;
     Q_EMIT stopped();
+}
+
+void AVTranscoder::pause(bool value)
+{
+    if (d->vfilter)
+        d->vfilter->setEnabled(!value);
+    if (d->afilter)
+        d->afilter->setEnabled(!value);
+    Q_EMIT paused(value);
+}
+
+void AVTranscoder::onSourceStarted()
+{
+    if (d->vfilter) {
+        qDebug("onSourceStarted framerate: %.3f/%.3f", videoEncoder()->frameRate(), sourcePlayer()->statistics().video.frame_rate);
+        if (videoEncoder()->frameRate() <= 0) { // use source frame rate. set before install filter (so before open)
+            videoEncoder()->setFrameRate(sourcePlayer()->statistics().video.frame_rate);
+        }
+    }
 }
 
 void AVTranscoder::prepareMuxer()
@@ -253,7 +302,7 @@ void AVTranscoder::writeAudio(const QtAV::Packet &packet)
         return;
     // TODO: startpts, duration, encoded size
     d->encoded_frames++;
-    qDebug("encoded frames: %d, pos: %lld", d->encoded_frames, packet.position);
+    //qDebug("encoded frames: %d, pos: %lld", d->encoded_frames, packet.position);
 }
 
 void AVTranscoder::writeVideo(const QtAV::Packet &packet)
@@ -266,8 +315,8 @@ void AVTranscoder::writeVideo(const QtAV::Packet &packet)
 
     // TODO: startpts, duration, encoded size
     d->encoded_frames++;
-    printf("encoded frames: %d, pos: %lld\r", d->encoded_frames, packet.position);
-    fflush(0);
+    //printf("encoded frames: %d, pos: %lld\r", d->encoded_frames, packet.position);
+    //fflush(0);
 }
 
 } //namespace QtAV

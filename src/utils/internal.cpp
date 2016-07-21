@@ -20,11 +20,93 @@
 ******************************************************************************/
 
 #include "internal.h"
+#if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
+#include <QtGui/QDesktopServices>
+#else
+#include <QtCore/QStandardPaths>
+#endif
 #include "QtAV/private/AVCompat.h"
 #include "utils/Logger.h"
-
 namespace QtAV {
+
+static const char kFileScheme[] = "file:";
+#define CHAR_COUNT(s) (sizeof(s) - 1) // tail '\0'
+
+/*!
+ * \brief getLocalPath
+ * get path that works for both ffmpeg and QFile
+ * Windows: ffmpeg does not supports file:///C:/xx.mov, only supports file:C:/xx.mov or C:/xx.mov
+ * QFile: does not support file: scheme
+ * fullPath can be file:///path from QUrl. QUrl.toLocalFile will remove file://
+ */
+QString getLocalPath(const QString& fullPath)
+{
+    int pos = fullPath.indexOf(QLatin1String(kFileScheme));
+    if (pos >= 0) {
+        pos += CHAR_COUNT(kFileScheme);
+        bool has_slash = false;
+        while (fullPath.at(pos) == QLatin1Char('/')) {
+            has_slash = true;
+            ++pos;
+        }
+        // win: ffmpeg does not supports file:///C:/xx.mov, only supports file:C:/xx.mov or C:/xx.mov
+#ifndef Q_OS_WIN // for QUrl
+        if (has_slash)
+            --pos;
+#endif
+    }
+    // always remove "file:" even thought it works for ffmpeg.but fileName() may be used for QFile which does not file:
+    if (pos > 0)
+        return fullPath.mid(pos);
+    return fullPath;
+}
+#undef CHAR_COUNT
+
 namespace Internal {
+
+
+namespace Path {
+
+QString appDataDir()
+{
+#if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
+    return QDesktopServices::storageLocation(QDesktopServices::DataLocation);
+#else
+#if QT_VERSION < QT_VERSION_CHECK(5, 4, 0)
+    return QStandardPaths::writableLocation(QStandardPaths::DataLocation);
+#else
+    return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+#endif //5.4.0
+#endif // 5.0.0
+}
+
+QString appFontsDir()
+{
+#if 0 //qt may return an read only path, for example OSX /System/Library/Fonts
+#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+    const QString dir(QStandardPaths::writableLocation(QStandardPaths::FontsLocation));
+    if (!dir.isEmpty())
+        return dir;
+#endif
+#endif
+    return appDataDir() + QStringLiteral("/fonts");
+}
+
+QString fontsDir()
+{
+#if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
+    return QDesktopServices::storageLocation(QDesktopServices::FontsLocation);
+#else
+    return QStandardPaths::standardLocations(QStandardPaths::FontsLocation).first();
+#endif
+}
+
+// writable font dir. it's appFontsDir()/fonts
+QString appFontsDir();
+// usually not writable
+QString fontsDir();
+
+}
 
 QString options2StringHelper(void* obj, const char* unit)
 {
@@ -35,37 +117,37 @@ QString options2StringHelper(void* obj, const char* unit)
             if (!unit)
                 continue;
             if (!qstrcmp(unit, opt->unit))
-                s.append(QString(" %1=%2").arg(opt->name).arg(opt->default_val.i64));
+                s.append(QStringLiteral(" %1=%2").arg(QLatin1String(opt->name)).arg(opt->default_val.i64));
             continue;
         } else {
             if (unit)
                 continue;
         }
-        s.append(QString("\n%1: ").arg(opt->name));
+        s.append(QStringLiteral("\n%1: ").arg(QLatin1String(opt->name)));
         switch (opt->type) {
         case AV_OPT_TYPE_FLAGS:
         case AV_OPT_TYPE_INT:
         case AV_OPT_TYPE_INT64:
-            s.append(QString("(%1)").arg(opt->default_val.i64));
+            s.append(QStringLiteral("(%1)").arg(opt->default_val.i64));
             break;
         case AV_OPT_TYPE_DOUBLE:
         case AV_OPT_TYPE_FLOAT:
-            s.append(QString("(%1)").arg(opt->default_val.dbl, 0, 'f'));
+            s.append(QStringLiteral("(%1)").arg(opt->default_val.dbl, 0, 'f'));
             break;
         case AV_OPT_TYPE_STRING:
             if (opt->default_val.str)
-                s.append(QString("(%1)").arg(opt->default_val.str));
+                s.append(QStringLiteral("(%1)").arg(QString::fromUtf8(opt->default_val.str)));
             break;
         case AV_OPT_TYPE_RATIONAL:
-            s.append(QString("(%1/%2)").arg(opt->default_val.q.num).arg(opt->default_val.q.den));
+            s.append(QStringLiteral("(%1/%2)").arg(opt->default_val.q.num).arg(opt->default_val.q.den));
             break;
         default:
             break;
         }
         if (opt->help)
-            s.append(" ").append(opt->help);
+            s.append(QLatin1String(" ")).append(QString::fromUtf8(opt->help));
         if (opt->unit && opt->type != AV_OPT_TYPE_CONST)
-            s.append("\n ").append(options2StringHelper(obj, opt->unit));
+            s.append(QLatin1String("\n ")).append(options2StringHelper(obj, opt->unit));
     }
     return s;
 }
@@ -80,7 +162,7 @@ void setOptionsToFFmpegObj(const QVariant& opt, void* obj)
         return;
     AVClass *c = obj ? *(AVClass**)obj : 0;
     if (c)
-        qDebug() << QString("%1.%2 options:").arg(c->class_name).arg(c->item_name(obj));
+        qDebug() << QStringLiteral("%1.%2 options:").arg(QLatin1String(c->class_name)).arg(QLatin1String(c->item_name(obj)));
     else
         qDebug() << "options:";
     if (opt.type() == QVariant::Map) {
@@ -184,7 +266,7 @@ void setOptionsForQObject(const QVariant& opt, QObject *obj)
 {
     if (!opt.isValid())
         return;
-    qDebug() << QString("set %1(%2) meta properties:").arg(obj->metaObject()->className()).arg(obj->objectName());
+    qDebug() << QStringLiteral("set %1(%2) meta properties:").arg(QLatin1String(obj->metaObject()->className())).arg(obj->objectName());
     if (opt.type() == QVariant::Hash) {
         QVariantHash options(opt.toHash());
         if (options.isEmpty())

@@ -1,6 +1,6 @@
 /******************************************************************************
     QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2013-2014 Wang Bin <wbsecg1@gmail.com>
+    Copyright (C) 2013-2015 Wang Bin <wbsecg1@gmail.com>
     theoribeiro <theo@fictix.com.br>
 
 *   This file is part of QtAV
@@ -39,6 +39,7 @@ class QQuickItemRenderer : public QQuickItem, public VideoRenderer
     Q_PROPERTY(int orientation READ orientation WRITE setOrientation NOTIFY orientationChanged)
     // regionOfInterest > sourceRect
     Q_PROPERTY(QRectF regionOfInterest READ regionOfInterest WRITE setRegionOfInterest NOTIFY regionOfInterestChanged)
+    Q_PROPERTY(qreal sourceAspectRatio READ sourceAspectRatio NOTIFY sourceAspectRatioChanged)
     Q_ENUMS(FillMode)
 public:
     enum FillMode {
@@ -66,6 +67,7 @@ Q_SIGNALS:
     void orientationChanged();
     void regionOfInterestChanged();
     void openGLChanged();
+    void sourceAspectRatioChanged(qreal value);
 
 protected:
     virtual bool event(QEvent *e);

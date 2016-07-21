@@ -202,12 +202,14 @@ Module {
         Property { name: "videoCodecs"; type: "QStringList"; isReadonly: true }
         Property { name: "videoCodecPriority"; type: "QStringList" }
         Property { name: "videoCodecOptions"; type: "QVariantMap" }
-        Property { name: "videoCapture"; type: "QtAV::VideoCapture"; isReadonly: true; isPointer: true }
         Property { name: "useWallclockAsTimestamps"; type: "bool" }
+        Property { name: "videoCapture"; type: "QtAV::VideoCapture"; isReadonly: true; isPointer: true }
         Property { name: "audioTrack"; type: "int" }
         Property { name: "externalAudio"; type: "QUrl" }
         Property { name: "internalAudioTracks"; type: "QVariantList"; isReadonly: true }
         Property { name: "externalAudioTracks"; type: "QVariantList"; isReadonly: true }
+        Property { name: "internalSubtitleTracks"; type: "QVariantList"; isReadonly: true }
+        Property { name: "internalSubtitleTrack"; type: "int" }
         Signal { name: "loopCountChanged" }
         Signal { name: "videoOutChanged" }
         Signal { name: "paused" }
@@ -253,11 +255,16 @@ Module {
         Property { name: "fillMode"; type: "FillMode" }
         Property { name: "orientation"; type: "int" }
         Property { name: "regionOfInterest"; type: "QRectF" }
+        Property { name: "sourceAspectRatio"; type: "double"; isReadonly: true }
         Signal {
             name: "fillModeChanged"
             Parameter { type: "QQuickItemRenderer::FillMode" }
         }
         Signal { name: "openGLChanged" }
+        Signal {
+            name: "sourceAspectRatioChanged"
+            Parameter { name: "value"; type: "double" }
+        }
     }
     Component {
         name: "QtAV::QuickFBORenderer"
@@ -278,11 +285,16 @@ Module {
         Property { name: "fillMode"; type: "FillMode" }
         Property { name: "orientation"; type: "int" }
         Property { name: "regionOfInterest"; type: "QRectF" }
+        Property { name: "sourceAspectRatio"; type: "double"; isReadonly: true }
         Signal {
             name: "fillModeChanged"
             Parameter { type: "QuickFBORenderer::FillMode" }
         }
         Signal { name: "openGLChanged" }
+        Signal {
+            name: "sourceAspectRatioChanged"
+            Parameter { name: "value"; type: "double" }
+        }
     }
     Component {
         name: "QtAV::QuickVideoPreview"
@@ -342,6 +354,9 @@ Module {
         Property { name: "autoLoad"; type: "bool" }
         Property { name: "file"; type: "string" }
         Property { name: "text"; type: "string"; isReadonly: true }
+        Property { name: "fontFile"; type: "string" }
+        Property { name: "fontsDir"; type: "string" }
+        Property { name: "fontFileForced"; type: "bool" }
         Signal {
             name: "loaded"
             Parameter { name: "path"; type: "string" }

@@ -1,6 +1,6 @@
 /******************************************************************************
     QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2014 Wang Bin <wbsecg1@gmail.com>
+    Copyright (C) 2014-2015 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -27,10 +27,8 @@
 #if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
 #include <QtGui/QOpenGLContext>
 #else
-#if !defined(QT_NO_OPENGL)
 #include <QtOpenGL/QGLContext>
 #define QOpenGLContext QGLContext
-#endif //!defined(QT_NO_OPENGL)
 #endif
 
 namespace QtAV {
@@ -56,7 +54,7 @@ public Q_SLOTS:
 
 private:
     QOpenGLContext *m_ctx;
-    QHash<const char*, VideoShader*> shader_cache;
+    QHash<qint64, VideoShader*> shader_cache;
 };
 } //namespace QtAV
 #endif // QTAV_SHADERMANAGER_H

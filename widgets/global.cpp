@@ -39,7 +39,9 @@
 #include "QtAVWidgets/GLWidgetRenderer.h"
 #endif //QTAV_HAVE(GL1)
 #if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+#ifndef QT_NO_OPENGL
 #include "QtAVWidgets/OpenGLWidgetRenderer.h"
+#endif //QT_NO_OPENGL
 #endif
 #include "QtAV/private/factory.h"
 #include "QtAV/private/mkid.h"
@@ -98,6 +100,7 @@ void RegisterVideoRendererGLWidget2_Man()
 }
 #endif //QTAV_HAVE(GL)
 #if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+#ifndef QT_NO_OPENGL
 #if AUTO_REGISTER
 FACTORY_REGISTER_ID_AUTO(VideoRenderer, OpenGLWidget, "OpenGLWidget")
 #else
@@ -107,6 +110,7 @@ void RegisterVideoRendererOpenGLWidget_Man()
 {
     FACTORY_REGISTER_ID_MAN(VideoRenderer, OpenGLWidget, "OpenGLWidget")
 }
+#endif //QT_NO_OPENGL
 #endif
 
 extern void RegisterVideoRendererGDI_Man();
@@ -134,7 +138,9 @@ void registerRenderers()
 #endif //QTAV_HAVE(GL1)
     RegisterVideoRendererWidget_Man();
 #if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+#ifndef QT_NO_OPENGL
     RegisterVideoRendererOpenGLWidget_Man();
+#endif //QT_NO_OPENGL
 #endif
 #if QTAV_HAVE(GDIPLUS)
     RegisterVideoRendererGDI_Man();
@@ -159,8 +165,8 @@ void about() {
     viewQtAV->setHtml(aboutQtAV_HTML());
     viewFFmpeg->setHtml(aboutFFmpeg_HTML());
     QTabWidget *tab = new QTabWidget;
-    tab->addTab(viewQtAV, "QtAV");
-    tab->addTab(viewFFmpeg, "FFmpeg");
+    tab->addTab(viewQtAV, QStringLiteral("QtAV"));
+    tab->addTab(viewFFmpeg, QStringLiteral("FFmpeg"));
     QPushButton *qbtn = new QPushButton(QObject::tr("About Qt"));
     QPushButton *btn = new QPushButton(QObject::tr("Ok"));
     QHBoxLayout *btnLayout = new QHBoxLayout;
@@ -169,7 +175,7 @@ void about() {
     btnLayout->addWidget(qbtn);
     btn->setFocus();
     QDialog dialog;
-    dialog.setWindowTitle(QObject::tr("About") + "  QtAV");
+    dialog.setWindowTitle(QObject::tr("About") + QStringLiteral("  QtAV"));
     QVBoxLayout *layout = new QVBoxLayout;
     dialog.setLayout(layout);
     layout->addWidget(tab);

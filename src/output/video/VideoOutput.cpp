@@ -56,7 +56,6 @@ public:
         quality = impl->quality();
         out_rect = impl->videoRect();
         roi = impl->regionOfInterest();
-        default_event_filter = impl->isDefaultEventFilterEnabled();
         preferred_format = impl->preferredPixelFormat();
         force_preferred = impl->isPreferredPixelFormatForced();
         brightness = impl->brightness();
@@ -97,25 +96,6 @@ VideoRendererId VideoOutput::id() const
     return d_func().impl->id();
 }
 
-bool VideoOutput::receive(const VideoFrame& frame)
-{
-    if (!isAvailable())
-        return false;
-    DPTR_D(VideoOutput);
-    d.source_aspect_ratio = frame.displayAspectRatio();
-    d.impl->d_func().source_aspect_ratio = d.source_aspect_ratio;
-    setInSize(frame.width(), frame.height());
-    // or simply call d.impl->receive(frame) to avoid lock here
-    QMutexLocker locker(&d.impl->dptr.pri<VideoRendererPrivate>().img_mutex);
-    Q_UNUSED(locker);
-    return d.impl->receiveFrame(frame);
-}
-/*
-void VideoOutput::setVideoFormat(const VideoFormat& format)
-{
-    d_func().impl->setVideoFormat(format);
-}
-*/
 bool VideoOutput::onSetPreferredPixelFormat(VideoFormat::PixelFormat pixfmt)
 {
     if (!isAvailable())
@@ -166,6 +146,7 @@ bool VideoOutput::receiveFrame(const VideoFrame& frame)
     if (!isAvailable())
         return false;
     DPTR_D(VideoOutput);
+    d.impl->d_func().source_aspect_ratio = d.source_aspect_ratio;
     return d.impl->receiveFrame(frame);
 }
 
@@ -197,14 +178,6 @@ void VideoOutput::drawFrame()
         return;
     DPTR_D(VideoOutput);
     d.impl->drawFrame();
-}
-
-void VideoOutput::resizeFrame(int width, int height)
-{
-    if (!isAvailable())
-        return;
-    DPTR_D(VideoOutput);
-    d.impl->resizeFrame(width, height);
 }
 
 void VideoOutput::handlePaintEvent()
@@ -376,12 +349,12 @@ void VideoOutput::setStatistics(Statistics* statistics)
     //d.statistics =
 }
 
-bool VideoOutput::onInstallFilter(Filter *filter)
+bool VideoOutput::onInstallFilter(Filter *filter, int index)
 {
     if (!isAvailable())
         return false;
     DPTR_D(VideoOutput);
-    bool ret = d.impl->onInstallFilter(filter);
+    bool ret = d.impl->onInstallFilter(filter, index);
     d.filters = d.impl->filters();
     return ret;
 }

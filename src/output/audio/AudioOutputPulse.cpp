@@ -1,19 +1,22 @@
 /******************************************************************************
     QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2015 Wang Bin <wbsecg1@gmail.com>
+    Copyright (C) 2014-2015 Wang Bin <wbsecg1@gmail.com>
 
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
+*   This file is part of QtAV
 
-    This program is distributed in the hope that it will be useful,
+    This library is free software; you can redistribute it and/or
+    modify it under the terms of the GNU Lesser General Public
+    License as published by the Free Software Foundation; either
+    version 2.1 of the License, or (at your option) any later version.
+
+    This library is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+    Lesser General Public License for more details.
 
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+    You should have received a copy of the GNU Lesser General Public
+    License along with this library; if not, write to the Free Software
+    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 ******************************************************************************/
 
 #include "QtAV/private/AudioOutputBackend.h"
@@ -34,7 +37,7 @@ class AudioOutputPulse Q_DECL_FINAL: public AudioOutputBackend
 public:
     AudioOutputPulse(QObject *parent = 0);
 
-    QString name() const Q_DECL_FINAL { return kName;}
+    QString name() const Q_DECL_FINAL { return QString::fromLatin1(kName);}
     bool isSupported(AudioFormat::SampleFormat sampleFormat) const Q_DECL_FINAL;
     bool isSupported(AudioFormat::ChannelLayout channelLayout) const Q_DECL_FINAL;
     bool open() Q_DECL_FINAL;
@@ -262,12 +265,12 @@ bool AudioOutputPulse::init(const AudioFormat &format)
     ScopedPALocker lock(loop);
     Q_UNUSED(lock);
     pa_mainloop_api *api = pa_threaded_mainloop_get_api(loop);
-    ctx = pa_context_new(api, qApp->applicationName().append(" (QtAV)").toUtf8().constData());
+    ctx = pa_context_new(api, qApp->applicationName().append(QLatin1String(" (QtAV)")).toUtf8().constData());
     if (!ctx) {
         qWarning("PulseAudio failed to allocate a context");
         return false;
     }
-    qDebug() << QString("PulseAudio %1, protocol: %2, server protocol: %3").arg(pa_get_library_version()).arg(pa_context_get_protocol_version(ctx)).arg(pa_context_get_server_protocol_version(ctx));
+    qDebug() << tr("PulseAudio %1, protocol: %2, server protocol: %3").arg(QString::fromLatin1(pa_get_library_version())).arg(pa_context_get_protocol_version(ctx)).arg(pa_context_get_server_protocol_version(ctx));
     // TODO: host property
     pa_context_connect(ctx, NULL, PA_CONTEXT_NOFLAGS, NULL);
     pa_context_set_state_callback(ctx, AudioOutputPulse::contextStateCallback, this);
@@ -303,7 +306,7 @@ bool AudioOutputPulse::init(const AudioFormat &format)
     pa_proplist *pl = pa_proplist_new();
     if (pl) {
         pa_proplist_sets(pl, PA_PROP_MEDIA_ROLE, "video");
-        pa_proplist_sets(pl, PA_PROP_MEDIA_ICON_NAME, qApp->applicationName().append(" (QtAV)").toUtf8().constData());
+        pa_proplist_sets(pl, PA_PROP_MEDIA_ICON_NAME, qApp->applicationName().append(QLatin1String(" (QtAV)")).toUtf8().constData());
     }
     stream = pa_stream_new_extended(ctx, "audio stream", &fi, 1, pl);
     if (!stream) {

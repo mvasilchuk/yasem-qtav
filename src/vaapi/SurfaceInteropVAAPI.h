@@ -86,8 +86,8 @@ private:
 };
 // load/resolve symbols only once in decoder and pass a VAAPI_XXX ptr
 // or use pool
-
-class GLXInteropResource Q_DECL_FINAL: public InteropResource, public VAAPI_GLX
+#ifndef QT_NO_OPENGL
+class GLXInteropResource Q_DECL_FINAL: public InteropResource, protected VAAPI_GLX
 {
 public:
     bool map(const surface_ptr &surface, GLuint tex, int w, int h, int) Q_DECL_OVERRIDE;
@@ -95,9 +95,9 @@ private:
     surface_glx_ptr surfaceGLX(const display_ptr& dpy, GLuint tex);
     QMap<GLuint,surface_glx_ptr> glx_surfaces; // render to different texture. surface_glx_ptr is created with texture
 };
-
+#endif //QT_NO_OPENGL
 #if VA_X11_INTEROP
-class X11InteropResource Q_DECL_FINAL: public InteropResource, public VAAPI_X11
+class X11InteropResource Q_DECL_FINAL: public InteropResource, protected VAAPI_X11
 {
 public:
     X11InteropResource();

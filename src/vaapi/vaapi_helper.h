@@ -76,12 +76,12 @@ private:
 struct _XDisplay;
 typedef struct _XDisplay Display;
 //TODO: use macro template. DEFINE_DL_SYMB(R, NAME, ARG....);
-class X11_API : public dll_helper {
+class X11_API : protected dll_helper {
 public:
     typedef Display* XOpenDisplay_t(const char* name);
     typedef int XCloseDisplay_t(Display* dpy);
     typedef int XInitThreads_t();
-    X11_API(): dll_helper("X11") {
+    X11_API(): dll_helper(QString::fromLatin1("X11")) {
         fp_XOpenDisplay = (XOpenDisplay_t*)resolve("XOpenDisplay");
         fp_XCloseDisplay = (XCloseDisplay_t*)resolve("XCloseDisplay");
         fp_XInitThreads = (XInitThreads_t*)resolve("XInitThreads");
@@ -107,7 +107,7 @@ private:
 class VAAPI_DRM : public dll_helper {
 public:
     typedef VADisplay vaGetDisplayDRM_t(int fd);
-    VAAPI_DRM(): dll_helper("va-drm",1) {
+    VAAPI_DRM(): dll_helper(QString::fromLatin1("va-drm"),1) {
         fp_vaGetDisplayDRM = (vaGetDisplayDRM_t*)resolve("vaGetDisplayDRM");
     }
     VADisplay vaGetDisplayDRM(int fd) {
@@ -125,7 +125,7 @@ public:
                                    short, short, unsigned short,  unsigned short,
                                    short, short, unsigned short, unsigned short,
                                    VARectangle *, unsigned int,  unsigned int);
-    VAAPI_X11(): dll_helper("va-x11",1) {
+    VAAPI_X11(): dll_helper(QString::fromLatin1("va-x11"),1) {
         fp_vaGetDisplay = (vaGetDisplay_t*)resolve("vaGetDisplay");
         fp_vaPutSurface = (vaPutSurface_t*)resolve("vaPutSurface");
     }
@@ -147,13 +147,14 @@ private:
     vaGetDisplay_t* fp_vaGetDisplay;
     vaPutSurface_t* fp_vaPutSurface;
 };
+#ifndef QT_NO_OPENGL
 class VAAPI_GLX : public dll_helper {
 public:
     typedef VADisplay vaGetDisplayGLX_t(Display *);
     typedef VAStatus vaCreateSurfaceGLX_t(VADisplay, GLenum, GLuint, void **);
     typedef VAStatus vaDestroySurfaceGLX_t(VADisplay, void *);
     typedef VAStatus vaCopySurfaceGLX_t(VADisplay, void *, VASurfaceID, unsigned int);
-    VAAPI_GLX(): dll_helper("va-glx",1) {
+    VAAPI_GLX(): dll_helper(QString::fromLatin1("va-glx"),1) {
         fp_vaGetDisplayGLX = (vaGetDisplayGLX_t*)resolve("vaGetDisplayGLX");
         fp_vaCreateSurfaceGLX = (vaCreateSurfaceGLX_t*)resolve("vaCreateSurfaceGLX");
         fp_vaDestroySurfaceGLX = (vaDestroySurfaceGLX_t*)resolve("vaDestroySurfaceGLX");
@@ -198,7 +199,7 @@ private:
     vaDestroySurfaceGLX_t* fp_vaDestroySurfaceGLX;
     vaCopySurfaceGLX_t* fp_vaCopySurfaceGLX;
 };
-
+#endif //QT_NO_OPENGL
 class display_t {
 public:
     display_t(VADisplay display = 0) : m_display(display) {}
@@ -245,7 +246,7 @@ private:
     int color_space;
 };
 typedef SharedPtr<surface_t> surface_ptr;
-
+#ifndef QT_NO_OPENGL
 class surface_glx_t : public VAAPI_GLX {
 public:
     surface_glx_t(const display_ptr& dpy) : m_dpy(dpy), m_glx(0) {}
@@ -273,7 +274,7 @@ private:
     void* m_glx;
 };
 typedef QSharedPointer<surface_glx_t> surface_glx_ptr; //store in a vector
-
+#endif //QT_NO_OPENGL
 } //namespace vaapi
 } //namespace QtAV
 #endif // QTAV_VAAPI_HELPER_H

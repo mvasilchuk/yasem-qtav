@@ -45,7 +45,7 @@ OptionalDepends = \
     avresample \
     avdevice
 # QtOpenGL module. In Qt5 we can disable it and still have opengl support
-!no-gl:!no-widgets {
+contains(QT_CONFIG, opengl):!no-gl:!no-widgets {
   greaterThan(QT_MAJOR_VERSION, 4):qtHaveModule(opengl):!config_gl {
     GL=config_gl done_config_gl
     cache(CONFIG, add, GL)
@@ -61,7 +61,8 @@ OptionalDepends = \
 !no-portaudio: OptionalDepends *= portaudio
 !no-libass: OptionalDepends *= libass
 win32 {
-  !no-dsound: win32: OptionalDepends *= dsound
+  !no-xaudio2: OptionalDepends *= xaudio2
+  !no-dsound: OptionalDepends *= dsound
   !no-direct2d:!no-widgets: OptionalDepends *= direct2d
   !no-gdiplus:!no-widgets: OptionalDepends *= gdiplus
   !no-dxva: OptionalDepends *= dxva
@@ -72,7 +73,9 @@ unix {
   !no-vaapi: OptionalDepends *= vaapi
   !no-cedarv: OptionalDepends *= libcedarv
 }
-
+mac|ios {
+  !no-videotoolbox: OptionalDepends *= videotoolbox
+}
 runConfigTests()
 !config_avresample:!config_swresample {
   error("libavresample or libswresample is required. Setup your environment correctly then delete $$BUILD_DIR/.qmake.conf and run qmake again")

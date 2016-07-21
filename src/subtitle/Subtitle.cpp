@@ -39,7 +39,7 @@
 
 namespace QtAV {
 
-const int kMaxSubtitleSize = 10 * 1024 * 1024;
+const int kMaxSubtitleSize = 10 * 1024 * 1024; // TODO: remove because we find the matched extenstions
 
 class Subtitle::Private {
 public:
@@ -54,6 +54,7 @@ public:
         , t(0)
         , delay(0)
         , current_count(0)
+        , force_font_file(false)
     {}
     void reset() {
         QMutexLocker lock(&mutex);
@@ -117,6 +118,10 @@ public:
      */
     int current_count;
     QMutex mutex;
+
+    bool force_font_file;
+    QString font_file;
+    QString fonts_dir;
 };
 
 Subtitle::Subtitle(QObject *parent) :
@@ -124,7 +129,7 @@ Subtitle::Subtitle(QObject *parent) :
   , priv(new Private())
 {
     // TODO: use factory.registedNames() and the order
-    setEngines(QStringList() << "LibASS" << "FFmpeg");
+    setEngines(QStringList() << QStringLiteral("LibASS") << QStringLiteral("FFmpeg"));
 }
 
 Subtitle::~Subtitle()
@@ -145,7 +150,7 @@ void Subtitle::setCodec(const QByteArray &value)
     if (priv->codec == value)
         return;
     priv->codec = value;
-    emit codecChanged();
+    Q_EMIT codecChanged();
 }
 
 QByteArray Subtitle::codec() const
@@ -161,12 +166,13 @@ void Subtitle::setEngines(const QStringList &value)
     priv->supported_suffixes.clear();
     priv->engine_names = value;
     if (priv->engine_names.isEmpty()) {
-        emit enginesChanged();
-        emit supportedSuffixesChanged();
+        Q_EMIT enginesChanged();
+        Q_EMIT supportedSuffixesChanged();
         return;
     }
     QList<SubtitleProcessor*> sps;
     foreach (const QString& e, priv->engine_names) {
+        qDebug() << "engine:" << e;
         QList<SubtitleProcessor*>::iterator it = priv->processors.begin();
         while (it != priv->processors.end()) {
             if (!(*it)) {
@@ -191,8 +197,8 @@ void Subtitle::setEngines(const QStringList &value)
     qDeleteAll(priv->processors);
     priv->processors = sps;
     if (sps.isEmpty()) {
-        emit enginesChanged();
-        emit supportedSuffixesChanged();
+        Q_EMIT enginesChanged();
+        Q_EMIT supportedSuffixesChanged();
         return;
     }
     foreach (SubtitleProcessor* sp, sps) {
@@ -200,8 +206,8 @@ void Subtitle::setEngines(const QStringList &value)
     }
     priv->supported_suffixes.removeDuplicates();
     // DO NOT set priv->suffixes
-    emit enginesChanged();
-    emit supportedSuffixesChanged();
+    Q_EMIT enginesChanged();
+    Q_EMIT supportedSuffixesChanged();
     // it's safe to reload
 }
 
@@ -222,7 +228,7 @@ void Subtitle::setFuzzyMatch(bool value)
     if (priv->fuzzy_match == value)
         return;
     priv->fuzzy_match = value;
-    emit fuzzyMatchChanged();
+    Q_EMIT fuzzyMatchChanged();
 }
 
 bool Subtitle::fuzzyMatch() const
@@ -236,7 +242,7 @@ void Subtitle::setRawData(const QByteArray &data)
     if (priv->raw_data.size() == data.size())
         return;
     priv->raw_data = data;
-    emit rawDataChanged();
+    Q_EMIT rawDataChanged();
 
     priv->url.clear();
     priv->file_name.clear();
@@ -256,9 +262,9 @@ void Subtitle::setFileName(const QString &name)
     priv->url.clear();
     priv->raw_data.clear();
     priv->file_name = name;
-    if (priv->file_name.startsWith("file:"))
+    if (priv->file_name.startsWith(QLatin1String("file:")))
         priv->file_name = getLocalPath(priv->file_name);
-    emit fileNameChanged();
+    Q_EMIT fileNameChanged();
 }
 
 QString Subtitle::fileName() const
@@ -271,7 +277,7 @@ void Subtitle::setDirs(const QStringList &value)
     if (priv->dirs == value)
         return;
     priv->dirs = value;
-    emit dirsChanged();
+    Q_EMIT dirsChanged();
 }
 
 QStringList Subtitle::dirs() const
@@ -289,7 +295,7 @@ void Subtitle::setSuffixes(const QStringList &value)
     if (priv->suffixes == value)
         return;
     priv->suffixes = value;
-    emit suffixesChanged();
+    Q_EMIT suffixesChanged();
 }
 
 QStringList Subtitle::suffixes() const
@@ -313,7 +319,7 @@ void Subtitle::setTimestamp(qreal t)
         priv->update_text = true;
         priv->update_image = true;
     }
-    emit contentChanged();
+    Q_EMIT contentChanged();
 }
 
 qreal Subtitle::timestamp() const
@@ -334,16 +340,64 @@ qreal Subtitle::delay() const
     return priv->delay;
 }
 
+QString Subtitle::fontFile() const
+{
+    return priv->font_file;
+}
+
+void Subtitle::setFontFile(const QString &value)
+{
+    if (priv->font_file == value)
+        return;
+    priv->font_file = value;
+    Q_EMIT fontFileChanged();
+    if (priv->processor) {
+        priv->processor->setFontFile(value);
+    }
+}
+
+QString Subtitle::fontsDir() const
+{
+    return priv->fonts_dir;
+}
+
+void Subtitle::setFontsDir(const QString &value)
+{
+    if (priv->fonts_dir == value)
+        return;
+    priv->fonts_dir = value;
+    Q_EMIT fontsDirChanged();
+    if (priv->processor) {
+        priv->processor->setFontsDir(value);
+    }
+}
+
+bool Subtitle::isFontFileForced() const
+{
+    return priv->force_font_file;
+}
+
+void Subtitle::setFontFileForced(bool value)
+{
+    if (priv->force_font_file == value)
+        return;
+    priv->force_font_file = value;
+    Q_EMIT fontFileForcedChanged();
+    if (priv->processor) {
+        priv->processor->setFontFileForced(value);
+    }
+}
+
 void Subtitle::load()
 {
     SubtitleProcessor *old_processor = priv->processor;
     priv->reset();
-    emit contentChanged(); //notify user to update subtitle
+    Q_EMIT contentChanged(); //notify user to update subtitle
     // lock is not needed because it's not loaded now
     if (!priv->url.isEmpty()) {
         // need qt network module network
         if (old_processor != priv->processor)
-            emit engineChanged();
+            Q_EMIT engineChanged();
         return;
     }
     // raw data is set, file name and url are empty
@@ -351,10 +405,10 @@ void Subtitle::load()
     if (!u8.isEmpty()) {
         priv->loaded = priv->processRawData(u8);
         if (priv->loaded)
-            emit loaded("");
+            Q_EMIT loaded();
         checkCapability();
         if (old_processor != priv->processor)
-            emit engineChanged();
+            Q_EMIT engineChanged();
         return;
     }
     // read from a url
@@ -365,10 +419,10 @@ void Subtitle::load()
             return;
         priv->loaded = priv->processRawData(u8);
         if (priv->loaded)
-            emit loaded(QUrl::fromPercentEncoding(priv->url.toEncoded()));
+            Q_EMIT loaded(QUrl::fromPercentEncoding(priv->url.toEncoded()));
         checkCapability();
         if (old_processor != priv->processor)
-            emit engineChanged();
+            Q_EMIT engineChanged();
         return;
     }
     // read from a file
@@ -376,7 +430,7 @@ void Subtitle::load()
     if (paths.isEmpty()) {
         checkCapability();
         if (old_processor != priv->processor)
-            emit engineChanged();
+            Q_EMIT engineChanged();
         return;
     }
     foreach (const QString& path, paths) {
@@ -388,12 +442,18 @@ void Subtitle::load()
         if (!priv->processRawData(u8))
             continue;
         priv->loaded = true;
-        emit loaded(path);
+        Q_EMIT loaded(path);
         break;
     }
     checkCapability();
     if (old_processor != priv->processor)
-        emit engineChanged();
+        Q_EMIT engineChanged();
+
+    if (priv->processor) {
+        priv->processor->setFontFile(priv->font_file);
+        priv->processor->setFontsDir(priv->fonts_dir);
+        priv->processor->setFontFileForced(priv->force_font_file);
+    }
 }
 
 void Subtitle::checkCapability()
@@ -401,7 +461,7 @@ void Subtitle::checkCapability()
     if (priv->last_can_render == canRender())
         return;
     priv->last_can_render = canRender();
-    emit canRenderChanged();
+    Q_EMIT canRenderChanged();
 }
 
 void Subtitle::loadAsync()
@@ -439,7 +499,7 @@ QString Subtitle::getText() const
     const int count = qAbs(priv->current_count);
     QLinkedList<SubtitleFrame>::iterator it = priv->current_count > 0 ? priv->itf : priv->itf + (priv->current_count+1);
     for (int i = 0; i < count; ++i) {
-        priv->current_text.append(it->text).append("\n");
+        priv->current_text.append(it->text).append(QStringLiteral("\n"));
         ++it;
     }
     priv->current_text = priv->current_text.trimmed();
@@ -471,9 +531,35 @@ QImage Subtitle::getImage(int width, int height, QRect* boundingRect)
     return priv->current_image;
 }
 
-bool Subtitle::processHeader(const QByteArray &data)
+bool Subtitle::processHeader(const QByteArray& codec, const QByteArray &data)
 {
-    return priv->processor && priv->processor->processHeader(data);
+    qDebug() << "codec: " << codec;
+    qDebug() << "header: " << data;
+    SubtitleProcessor *old_processor = priv->processor;
+    priv->reset(); // reset for the new subtitle stream (internal)
+    if (priv->processors.isEmpty())
+        return false;
+    foreach (SubtitleProcessor *sp, priv->processors) {
+        if (sp->supportedTypes().contains(QLatin1String(codec))) {
+            priv->processor = sp;
+            qDebug() << "current subtitle processor: " << sp->name();
+            break;
+        }
+    }
+    if (old_processor != priv->processor)
+        Q_EMIT engineChanged();
+    if (!priv->processor) {
+        qWarning("No subtitle processor supports the codec '%s'", codec.constData());
+        return false;
+    }
+    if (!priv->processor->processHeader(codec, data))
+        return false;
+    priv->loaded = true;
+
+    priv->processor->setFontFile(priv->font_file);
+    priv->processor->setFontsDir(priv->fonts_dir);
+    priv->processor->setFontFileForced(priv->force_font_file);
+    return true;
 }
 
 bool Subtitle::processLine(const QByteArray &data, qreal pts, qreal duration)
@@ -482,9 +568,10 @@ bool Subtitle::processLine(const QByteArray &data, qreal pts, qreal duration)
         return false;
     SubtitleFrame f = priv->processor->processLine(data, pts, duration);
     if (!f.isValid())
-        return false;
+        return false; // TODO: if seek to previous position, an invalid frame is returned.
     if (priv->frames.isEmpty() || priv->frames.last() < f) {
         priv->frames.append(f);
+        priv->itf = priv->frames.begin();
         return true;
     }
     // usually add to the end. TODO: test
@@ -495,6 +582,7 @@ bool Subtitle::processLine(const QByteArray &data, qreal pts, qreal duration)
     if (it != priv->frames.begin()) // found in middle, insert before next
         ++it;
     priv->frames.insert(it, f);
+    priv->itf = it;
     return true;
 }
 
@@ -588,9 +676,9 @@ QStringList Subtitle::Private::find()
     QString base_name = fi.completeBaseName(); // a.mp4=>a, video suffix has only 1 dot
     QStringList filters, fileters_base;
     foreach (const QString& suf, sfx) {
-        filters.append(QString("%1*.%2").arg(name).arg(suf));
+        filters.append(QStringLiteral("%1*.%2").arg(name).arg(suf));
         if (name != base_name)
-            fileters_base.append(QString("%1*.%2").arg(base_name).arg(suf));
+            fileters_base.append(QStringLiteral("%1*.%2").arg(base_name).arg(suf));
     }
     QStringList search_dirs(dirs);
     search_dirs.prepend(fi.absolutePath());
@@ -616,7 +704,7 @@ QStringList Subtitle::Private::find()
     foreach (const QString& suf, sfx) {
         if (list.isEmpty())
             break;
-        QRegExp rx("*." + suf);
+        QRegExp rx(QStringLiteral("*.") + suf);
         rx.setPatternSyntax(QRegExp::Wildcard);
         QFileInfoList::iterator it = list.begin();
         while (it != list.end()) {
@@ -713,12 +801,12 @@ bool Subtitle::Private::processRawData(SubtitleProcessor *sp, const QByteArray &
         qWarning() << "open subtitle qbuffer error: " << buf.errorString();
     }
     qDebug("processing subtitle from a tmp utf8 file...");
-    QString name = QUrl::fromPercentEncoding(url.toEncoded()).section('/', -1);
+    QString name = QUrl::fromPercentEncoding(url.toEncoded()).section(ushort('/'), -1);
     if (name.isEmpty())
         name = QFileInfo(file_name).fileName(); //priv->name.section('/', -1); // if no seperator?
     if (name.isEmpty())
-        name = "QtAV_u8_sub_cache";
-    name.append(QString("_%1").arg((quintptr)this));
+        name = QStringLiteral("QtAV_u8_sub_cache");
+    name.append(QStringLiteral("_%1").arg((quintptr)this));
     QFile w(QDir::temp().absoluteFilePath(name));
     if (w.open(QIODevice::WriteOnly)) {
         w.write(data);
@@ -753,6 +841,9 @@ void SubtitleAPIProxy::setSubtitle(Subtitle *sub)
     QObject::connect(m_s, SIGNAL(suffixesChanged()), m_obj, SIGNAL(suffixesChanged()));
     QObject::connect(m_s, SIGNAL(supportedSuffixesChanged()), m_obj, SIGNAL(supportedSuffixesChanged()));
     QObject::connect(m_s, SIGNAL(delayChanged()), m_obj, SIGNAL(delayChanged()));
+    QObject::connect(m_s, SIGNAL(fontFileChanged()), m_obj, SIGNAL(fontFileChanged()));
+    QObject::connect(m_s, SIGNAL(fontsDirChanged()), m_obj, SIGNAL(fontsDirChanged()));
+    QObject::connect(m_s, SIGNAL(fontFileForcedChanged()), m_obj, SIGNAL(fontFileForcedChanged()));
 }
 
 void SubtitleAPIProxy::setCodec(const QByteArray& value)
@@ -870,6 +961,42 @@ void SubtitleAPIProxy::setDelay(qreal value)
 qreal SubtitleAPIProxy::delay() const
 {
     return m_s ? m_s->delay() : 0;
+}
+
+QString SubtitleAPIProxy::fontFile() const
+{
+    return m_s ? m_s->fontFile() : QString();
+}
+
+void SubtitleAPIProxy::setFontFile(const QString &value)
+{
+    if (!m_s)
+        return;
+    m_s->setFontFile(value);
+}
+
+QString SubtitleAPIProxy::fontsDir() const
+{
+    return m_s ? m_s->fontsDir() : QString();
+}
+
+void SubtitleAPIProxy::setFontsDir(const QString &value)
+{
+    if (!m_s)
+        return;
+    m_s->setFontsDir(value);
+}
+
+bool SubtitleAPIProxy::isFontFileForced() const
+{
+    return m_s && m_s->isFontFileForced();
+}
+
+void SubtitleAPIProxy::setFontFileForced(bool value)
+{
+    if (!m_s)
+        return;
+    m_s->setFontFileForced(value);
 }
 
 } //namespace QtAV

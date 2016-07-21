@@ -91,7 +91,6 @@ AVPlayer::Private::Private()
     , vthread(0)
     , vcapture(0)
     , speed(1.0)
-    , ao_enabled(true)
     , vos(0)
     , aos(0)
     , brightness(0)
@@ -196,7 +195,7 @@ void AVPlayer::Private::initBaseStatistics()
     //fmt_ctx->duration may be AV_NOPTS_VALUE. AVDemuxer.duration deals with this case
     AVDictionaryEntry *tag = NULL;
     while ((tag = av_dict_get(fmt_ctx->metadata, "", tag, AV_DICT_IGNORE_SUFFIX))) {
-        statistics.metadata.insert(tag->key, tag->value);
+        statistics.metadata.insert(QString::fromUtf8(tag->key), QString::fromUtf8(tag->value));
     }
     updateNotifyInterval();
 }
@@ -211,30 +210,26 @@ void AVPlayer::Private::initCommonStatistics(int s, Statistics::Common *st, AVCo
     AVStream *stream = fmt_ctx->streams[s];
     qDebug("stream: %d, duration=%lld (%lld ms), time_base=%f", s, stream->duration, qint64(qreal(stream->duration)*av_q2d(stream->time_base)*1000.0), av_q2d(stream->time_base));
     // AVCodecContext.codec_name is deprecated. use avcodec_get_name. check null avctx->codec?
-    st->codec = avcodec_get_name(avctx->codec_id);
-    st->codec_long = get_codec_long_name(avctx->codec_id);
+    st->codec = QLatin1String(avcodec_get_name(avctx->codec_id));
+    st->codec_long = QLatin1String(get_codec_long_name(avctx->codec_id));
     st->total_time = QTime(0, 0, 0).addMSecs(stream->duration == (qint64)AV_NOPTS_VALUE ? 0 : int(qreal(stream->duration)*av_q2d(stream->time_base)*1000.0));
     st->start_time = QTime(0, 0, 0).addMSecs(stream->start_time == (qint64)AV_NOPTS_VALUE ? 0 : int(qreal(stream->start_time)*av_q2d(stream->time_base)*1000.0));
     qDebug("codec: %s(%s)", qPrintable(st->codec), qPrintable(st->codec_long));
     st->bit_rate = avctx->bit_rate; //fmt_ctx
     st->frames = stream->nb_frames;
-    st->frame_rate = av_q2d(stream->avg_frame_rate);
+    if (stream->avg_frame_rate.den && stream->avg_frame_rate.num)
+        st->frame_rate = av_q2d(stream->avg_frame_rate);
+#if (defined FF_API_R_FRAME_RATE && FF_API_R_FRAME_RATE) //removed in libav10
+    //FIXME: which 1 should we choose? avg_frame_rate may be nan, r_frame_rate may be wrong(guessed value)
+    else if (stream->r_frame_rate.den && stream->r_frame_rate.num)
+        st->frame_rate = av_q2d(stream->r_frame_rate);
+#endif //FF_API_R_FRAME_RATE
     //http://ffmpeg.org/faq.html#AVStream_002er_005fframe_005frate-is-wrong_002c-it-is-much-larger-than-the-frame-rate_002e
     //http://libav-users.943685.n4.nabble.com/Libav-user-Reading-correct-frame-rate-fps-of-input-video-td4657666.html
-#if 0
-    // why audio frame rate computed may close to sample rate
-    if (isnan(st->frame_rate) && st->frames > 0) {
-        if (stream->duration != (qint64)AV_NOPTS_VALUE) {
-            st->frame_rate = double(st->frames)/(qreal(stream->duration)*av_q2d(stream->time_base));
-        } else if (demuxer.duration() > 0) {
-            st->frame_rate = double(st->frames)/double(demuxer.duration())*1000.0;
-        }
-    }
-#endif
     //qDebug("time: %f~%f, nb_frames=%lld", st->start_time, st->total_time, stream->nb_frames); //why crash on mac? av_q2d({0,0})?
     AVDictionaryEntry *tag = NULL;
     while ((tag = av_dict_get(stream->metadata, "", tag, AV_DICT_IGNORE_SUFFIX))) {
-        st->metadata.insert(tag->key, tag->value);
+        st->metadata.insert(QString::fromUtf8(tag->key), QString::fromUtf8(tag->value));
     }
 }
 
@@ -257,8 +252,8 @@ void AVPlayer::Private::initAudioStatistics(int s)
     char cl[128]; //
     // nb_channels -1: will use av_get_channel_layout_nb_channels
     av_get_channel_layout_string(cl, sizeof(cl), avctx->channels, avctx->channel_layout); //TODO: ff version
-    statistics.audio_only.channel_layout = cl;
-    statistics.audio_only.sample_fmt = av_get_sample_fmt_name(avctx->sample_fmt);
+    statistics.audio_only.channel_layout = QLatin1String(cl);
+    statistics.audio_only.sample_fmt = QLatin1String(av_get_sample_fmt_name(avctx->sample_fmt));
     statistics.audio_only.frame_size = avctx->frame_size;
     statistics.audio_only.sample_rate = avctx->sample_rate;
 }
@@ -279,7 +274,7 @@ void AVPlayer::Private::initVideoStatistics(int s)
     statistics.video_only.coded_height = avctx->coded_height;
     statistics.video_only.coded_width = avctx->coded_width;
     statistics.video_only.gop_size = avctx->gop_size;
-    statistics.video_only.pix_fmt = av_get_pix_fmt_name(avctx->pix_fmt);
+    statistics.video_only.pix_fmt = QLatin1String(av_get_pix_fmt_name(avctx->pix_fmt));
     statistics.video_only.height = avctx->height;
     statistics.video_only.width = avctx->width;
 }
@@ -309,7 +304,7 @@ bool AVPlayer::Private::setupAudioThread(AVPlayer *player)
         delete adec;
         adec = 0;
     }
-    adec = AudioDecoder::create("FFmpeg");
+    adec = AudioDecoder::create();
     QObject::connect(adec, SIGNAL(error(QtAV::AVError)), player, SIGNAL(error(QtAV::AVError)));
     adec->setCodecContext(avctx);
     adec->setOptions(ac_opt);
@@ -318,11 +313,6 @@ bool AVPlayer::Private::setupAudioThread(AVPlayer *player)
         qWarning() << e.string();
         emit player->error(e);
         return false;
-    }
-    if (ao_enabled) {
-        // TODO: only when no audio stream or user disable audio stream. running an audio thread without sound is waste resource?
-        //masterClock()->setClockType(AVClock::ExternalClock);
-        //return;
     }
     correct_audio_channels(avctx);
     AudioFormat af;
@@ -364,7 +354,6 @@ bool AVPlayer::Private::setupAudioThread(AVPlayer *player)
     adec->resampler()->inAudioFormat().setSampleRate(avctx->sample_rate);
     adec->resampler()->inAudioFormat().setChannels(avctx->channels);
     adec->resampler()->inAudioFormat().setChannelLayoutFFmpeg(avctx->channel_layout);
-    adec->prepare();
 #endif
     if (!athread) {
         qDebug("new audio thread");
@@ -390,29 +379,112 @@ bool AVPlayer::Private::setupAudioThread(AVPlayer *player)
     return true;
 }
 
-QVariantList AVPlayer::Private::getAudioTracksInfo(AVDemuxer *demuxer)
+QVariantList AVPlayer::Private::getTracksInfo(AVDemuxer *demuxer, AVDemuxer::StreamType st)
 {
     QVariantList info;
     if (!demuxer)
         return info;
-    foreach (int s, demuxer->audioStreams()) {
+    QList<int> streams;
+    switch (st) {
+    case AVDemuxer::AudioStream:
+        streams = demuxer->audioStreams();
+        break;
+    case AVDemuxer::SubtitleStream:
+        streams = demuxer->subtitleStreams();
+        break;
+    case AVDemuxer::VideoStream:
+        streams = demuxer->videoStreams();
+    default:
+        break;
+    }
+    if (streams.isEmpty())
+        return info;
+    foreach (int s, streams) {
         QVariantMap t;
-        t["id"] = info.size();
-        t["file"] = demuxer->fileName();
+        t[QStringLiteral("id")] = info.size();
+        t[QStringLiteral("file")] = demuxer->fileName();
         AVStream *stream = demuxer->formatContext()->streams[s];
+        AVCodecContext *ctx = stream->codec;
+        if (ctx) {
+            t[QStringLiteral("codec")] = QByteArray(avcodec_descriptor_get(ctx->codec_id)->name);
+            if (ctx->extradata)
+                t[QStringLiteral("extra")] = QByteArray((const char*)ctx->extradata, ctx->extradata_size);
+        }
         AVDictionaryEntry *tag = av_dict_get(stream->metadata, "language", NULL, 0);
         if (!tag)
             tag = av_dict_get(stream->metadata, "lang", NULL, 0);
         if (tag) {
-            t["language"] = tag->value;
+            t[QStringLiteral("language")] = QString::fromUtf8(tag->value);
         }
         tag = av_dict_get(stream->metadata, "title", NULL, 0);
         if (tag) {
-            t["title"] = tag->value;
+            t[QStringLiteral("title")] = QString::fromUtf8(tag->value);
         }
         info.push_back(t);
     }
+    //QVariantMap t;
+    //t[QStringLiteral("id")] = -1;
+    //info.prepend(t);
     return info;
+}
+
+bool AVPlayer::Private::applySubtitleStream(int n, AVPlayer *player)
+{
+    if (!demuxer.setStreamIndex(AVDemuxer::SubtitleStream, n))
+        return false;
+    AVCodecContext *ctx = demuxer.subtitleCodecContext();
+    if (!ctx)
+        return false;
+    const AVCodecDescriptor *codec_desc = avcodec_descriptor_get(ctx->codec_id);
+    QByteArray codec(codec_desc->name);
+    if (ctx->extradata)
+        Q_EMIT player->internalSubtitleHeaderRead(codec, QByteArray((const char*)ctx->extradata, ctx->extradata_size));
+    else
+        Q_EMIT player->internalSubtitleHeaderRead(codec, QByteArray());
+    return true;
+}
+
+bool AVPlayer::Private::tryApplyDecoderPriority(AVPlayer *player)
+{
+    // TODO: add an option to apply the new decoder even if not available
+    qint64 pos = player->position();
+    VideoDecoder *vd = NULL;
+    AVCodecContext *avctx = demuxer.videoCodecContext();
+    foreach(VideoDecoderId vid, vc_ids) {
+        qDebug("**********trying video decoder: %s...", VideoDecoderFactory::name(vid).c_str());
+        vd = VideoDecoder::create(vid);
+        if (!vd)
+            continue;
+        vd->setCodecContext(avctx); // It's fine because AVDecoder copy the avctx properties
+        vd->setOptions(vc_opt);
+        if (vd->open()) {
+            qDebug("**************Video decoder found:%p", vd);
+            break;
+        }
+        delete vd;
+        vd = 0;
+    }
+    qDebug("**************set new decoder:%p -> %p", vdec, vd);
+    if (!vd) {
+        Q_EMIT player->error(AVError(AVError::VideoCodecNotFound));
+        return false;
+    }
+    if (vd->id() == vdec->id()) {
+        qDebug("Video decoder does not change");
+        delete vd;
+        return true;
+    }
+    vthread->packetQueue()->clear();
+    vthread->setDecoder(vd);
+    // MUST delete decoder after video thread set the decoder to ensure the deleted vdec will not be used in vthread!
+    if (vdec)
+        delete vdec;
+    vdec = vd;
+    QObject::connect(vdec, SIGNAL(error(QtAV::AVError)), player, SIGNAL(error(QtAV::AVError)));
+    initVideoStatistics(demuxer.videoStream());
+    // If no seek, drop packets until a key frame packet is found. But we may drop too many packets, and also a/v sync is a problem.
+    player->setPosition(pos);
+    return true;
 }
 
 bool AVPlayer::Private::setupVideoThread(AVPlayer *player)
@@ -443,9 +515,9 @@ bool AVPlayer::Private::setupVideoThread(AVPlayer *player)
         //vd->isAvailable() //TODO: the value is wrong now
         vd->setCodecContext(avctx);
         vd->setOptions(vc_opt);
-        if (vd->prepare() && vd->open()) {
+        if (vd->open()) {
             vdec = vd;
-            qDebug("**************Video decoder found");
+            qDebug("**************Video decoder found:%p", vdec);
             break;
         }
         delete vd;
@@ -474,11 +546,13 @@ bool AVPlayer::Private::setupVideoThread(AVPlayer *player)
         }
     }
     vthread->setDecoder(vdec);
+
     vthread->setBrightness(brightness);
     vthread->setContrast(contrast);
     vthread->setSaturation(saturation);
     updateBufferValue(vthread->packetQueue());
     initVideoStatistics(demuxer.videoStream());
+
     return true;
 }
 

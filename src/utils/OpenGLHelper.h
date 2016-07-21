@@ -24,12 +24,26 @@
 
 #include "QtAV/VideoFormat.h"
 #include <qglobal.h>
+#ifndef QT_NO_OPENGL
 #if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+#include <QtGui/QOpenGLBuffer>
 #include <QtGui/QOpenGLContext>
 #include <QtGui/QOpenGLFunctions>
+#include <QtGui/QOpenGLShaderProgram>
 #elif defined(QT_OPENGL_LIB)
+#if QT_VERSION >= QT_VERSION_CHECK(4, 8, 0)
+#include <QtOpenGL/QGLFunctions>
+#endif //4.8
+#include <QtOpenGL/QGLBuffer>
 #include <QtOpenGL/QGLContext>
+#include <QtOpenGL/QGLShaderProgram>
+#define QOpenGLShaderProgram QGLShaderProgram
+typedef QGLBuffer QOpenGLBuffer;
 #define QOpenGLContext QGLContext
+#define QOpenGLShaderProgram QGLShaderProgram
+#define QOpenGLShader QGLShader
+#define QOpenGLFunctions QGLFunctions
+#define initializeOpenGLFunctions() initializeGLFunctions()
 #include <qgl.h>
 #else //used by vaapi even qtopengl module is disabled
 #if defined(QT_OPENGL_ES_2)
@@ -89,6 +103,7 @@
 #define GL_TEXTURE_RECTANGLE 0x84F5
 #endif
 
+class QMatrix4x4;
 namespace QtAV {
 namespace OpenGLHelper {
 
@@ -101,11 +116,27 @@ bool isOpenGLES();
 bool hasExtension(const char* exts[]);
 bool isPBOSupported();
 void glActiveTexture(GLenum texture);
-bool videoFormatToGL(const VideoFormat& fmt, GLint* internal_format, GLenum* data_format, GLenum* data_type);
+/*!
+ * \brief videoFormatToGL
+ * \param fmt
+ * \param internal_format an array with size fmt.planeCount()
+ * \param data_format an array with size fmt.planeCount()
+ * \param data_type an array with size fmt.planeCount()
+ * \param mat channel reorder matrix used in glsl
+ * \return false if fmt is not supported
+ */
+bool videoFormatToGL(const VideoFormat& fmt, GLint* internal_format, GLenum* data_format, GLenum* data_type, QMatrix4x4* mat = NULL);
 int bytesOfGLFormat(GLenum format, GLenum dataType = GL_UNSIGNED_BYTE);
 GLint GetGLInternalFormat(GLint data_format, int bpp);
 
 } //namespace OpenGLHelper
 } //namespace QtAV
-
+#else
+namespace QtAV {
+namespace OpenGLHelper {
+#define DYGL(f) f
+inline bool isOpenGLES() {return false;}
+} //namespace OpenGLHelper
+} //namespace QtAV
+#endif //QT_NO_OPENGL
 #endif // QTAV_OPENGLHELPER_H

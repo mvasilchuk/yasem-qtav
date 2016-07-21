@@ -24,13 +24,7 @@
 #include "QtAV/OpenGLVideo.h"
 #include "QtAV/FilterContext.h"
 #include <QResizeEvent>
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
-#include <QtGui/QOpenGLShaderProgram>
-#else
-#include <QtOpenGL/QGLShaderProgram>
-#define QOpenGLShaderProgram QGLShaderProgram
-#define initializeOpenGLFunctions() initializeGLFunctions()
-#endif
+#include "utils/OpenGLHelper.h"
 #include "utils/Logger.h"
 
 namespace QtAV {
@@ -108,14 +102,22 @@ void OpenGLRendererBase::onInitializeGL()
 {
     DPTR_D(OpenGLRendererBase);
     //makeCurrent();
+#if QT_VERSION >= QT_VERSION_CHECK(4, 8, 0)
+    initializeOpenGLFunctions();
+#endif
     QOpenGLContext *ctx = const_cast<QOpenGLContext*>(QOpenGLContext::currentContext()); //qt4 returns const
     d.glv.setOpenGLContext(ctx);
     //const QByteArray extensions(reinterpret_cast<const char *>(glGetString(GL_EXTENSIONS)));
     bool hasGLSL = QOpenGLShaderProgram::hasOpenGLShaderPrograms();
     qDebug("OpenGL version: %d.%d  hasGLSL: %d", ctx->format().majorVersion(), ctx->format().minorVersion(), hasGLSL);  
-#if QT_VERSION >= QT_VERSION_CHECK(4, 8, 0)
-    initializeOpenGLFunctions();
-#endif
+    static bool sInfo = true;
+    if (sInfo) {
+        sInfo = false;
+        qDebug("GL_VERSION: %s", DYGL(glGetString(GL_VERSION)));
+        qDebug("GL_VENDOR: %s", DYGL(glGetString(GL_VENDOR)));
+        qDebug("GL_RENDERER: %s", DYGL(glGetString(GL_RENDERER)));
+        qDebug("GL_SHADING_LANGUAGE_VERSION: %s", DYGL(glGetString(GL_SHADING_LANGUAGE_VERSION)));
+    }
 }
 
 void OpenGLRendererBase::onPaintGL()

@@ -22,25 +22,12 @@
 #include "QtAV/OpenGLVideo.h"
 #include <QtGui/QColor>
 #if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
-#include <QtGui/QOpenGLBuffer>
-#include <QtGui/QOpenGLShaderProgram>
-#include <QtGui/QOpenGLFunctions>
 #include <QtGui/QSurface>
 #define QT_VAO (QT_VERSION >= QT_VERSION_CHECK(5, 1, 0))
 #if QT_VAO
 #include <QtGui/QOpenGLVertexArrayObject>
 #endif //QT_VAO
-#else
-#if QT_VERSION >= QT_VERSION_CHECK(4, 8, 0)
-#include <QtOpenGL/QGLFunctions>
-#endif
-#include <QtOpenGL/QGLBuffer>
-#include <QtOpenGL/QGLShaderProgram>
-typedef QGLBuffer QOpenGLBuffer;
-#define QOpenGLShaderProgram QGLShaderProgram
-#define QOpenGLShader QGLShader
-#define QOpenGLFunctions QGLFunctions
-#endif
+#endif //5.0
 #include "QtAV/SurfaceInterop.h"
 #include "QtAV/VideoShader.h"
 #include "ShaderManager.h"
@@ -64,12 +51,6 @@ public:
         , valiad_tex_width(1.0)
     {
         static bool disable_vbo = qgetenv("QTAV_NO_VBO").toInt() > 0;
-#if defined(Q_OS_WIN) && (defined(QT_OPENGL_ES_2) || defined(QT_OPENGL_DYNAMIC))
-        if (!disable_vbo && qEnvironmentVariableIsEmpty("QTAV_NO_VBO") && OpenGLHelper::isOpenGLES()) {
-            qDebug("Disable VBO for ANGLE to let QPainter on renderers work. Set QTAV_NO_VBO=0 to enable VBO");
-            disable_vbo = true;
-        }
-#endif
         try_vbo = !disable_vbo;
         static bool disable_vao = qgetenv("QTAV_NO_VAO").toInt() > 0;
         try_vao = !disable_vao;
@@ -106,10 +87,13 @@ public:
             return;
         }
 #endif //QT_VAO
-        // release vbo?
         char const *const *attr = shader->attributeNames();
         for (int i = 0; attr[i]; ++i) {
             shader->program()->disableAttributeArray(i); //TODO: in setActiveShader
+        }
+        // release vbo. qpainter is affected if vbo is bound
+        if (try_vbo && vbo.isCreated()) {
+            vbo.release();
         }
     }
 public:

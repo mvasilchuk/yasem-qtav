@@ -29,7 +29,7 @@ template<typename ID, typename Factory>
 static QStringList idsToNames(QVector<ID> ids) {
     QStringList decs;
     foreach (ID id, ids) {
-        decs.append(Factory::name(id).c_str());
+        decs.append(QString::fromUtf8(Factory::name(id).c_str()));
     }
     return decs;
 }
@@ -75,6 +75,9 @@ QmlAVPlayer::QmlAVPlayer(QObject *parent) :
   , mpPlayer(0)
   , mChannelLayout(ChannelLayoutAuto)
   , m_timeout(30000)
+  , m_abort_timeout(true)
+  , m_audio_track(0)
+  , m_sub_track(0)
 {
     classBegin();
 }
@@ -84,6 +87,9 @@ void QmlAVPlayer::classBegin()
     if (mpPlayer)
         return;
     mpPlayer = new AVPlayer(this);
+    connect(mpPlayer, SIGNAL(internalSubtitleTracksChanged(QVariantList)), SIGNAL(internalSubtitleTracksChanged()));
+    connect(mpPlayer, SIGNAL(internalAudioTracksChanged(QVariantList)), SIGNAL(internalAudioTracksChanged()));
+    connect(mpPlayer, SIGNAL(externalAudioTracksChanged(QVariantList)), SIGNAL(externalAudioTracksChanged()));
     connect(mpPlayer, SIGNAL(durationChanged(qint64)), SIGNAL(durationChanged()));
     connect(mpPlayer, SIGNAL(mediaStatusChanged(QtAV::MediaStatus)), SLOT(_q_statusChanged()));
     connect(mpPlayer, SIGNAL(error(QtAV::AVError)), SLOT(_q_error(QtAV::AVError)));
@@ -99,7 +105,7 @@ void QmlAVPlayer::classBegin()
     connect(mpPlayer->audio(), SIGNAL(volumeChanged(qreal)), SLOT(applyVolume()), Qt::DirectConnection);
     connect(mpPlayer->audio(), SIGNAL(muteChanged(bool)), SLOT(applyVolume()), Qt::DirectConnection);
 
-    mVideoCodecs << "FFmpeg";
+    mVideoCodecs << QStringLiteral("FFmpeg");
 
     m_metaData.reset(new MediaMetaData());
 
@@ -264,10 +270,10 @@ void QmlAVPlayer::setWallclockAsTimestamps(bool use_wallclock_as_timestamps)
     QVariantHash opt = mpPlayer->optionsForFormat();
 
     if (use_wallclock_as_timestamps) {
-        opt["use_wallclock_as_timestamps"] = 1;
+        opt[QStringLiteral("use_wallclock_as_timestamps")] = 1;
         mpPlayer->setBufferValue(1);
     } else {
-        opt.remove("use_wallclock_as_timestamps");
+        opt.remove(QStringLiteral("use_wallclock_as_timestamps"));
         mpPlayer->setBufferValue(-1);
     }
     mpPlayer->setOptionsForFormat(opt);
@@ -373,6 +379,26 @@ QVariantList QmlAVPlayer::externalAudioTracks() const
 QVariantList QmlAVPlayer::internalAudioTracks() const
 {
     return mpPlayer ? mpPlayer->internalAudioTracks() : QVariantList();
+}
+
+int QmlAVPlayer::internalSubtitleTrack() const
+{
+    return m_sub_track;
+}
+
+void QmlAVPlayer::setInternalSubtitleTrack(int value)
+{
+    if (m_sub_track == value)
+        return;
+    m_sub_track = value;
+    Q_EMIT internalSubtitleTrackChanged();
+    if (mpPlayer)
+        mpPlayer->setSubtitleStream(value);
+}
+
+QVariantList QmlAVPlayer::internalSubtitleTracks() const
+{
+    return mpPlayer ? mpPlayer->internalSubtitleTracks() : QVariantList();
 }
 
 QStringList QmlAVPlayer::videoCodecPriority() const
@@ -503,6 +529,8 @@ void QmlAVPlayer::setPlaybackState(PlaybackState playbackState)
             mpPlayer->setInterruptTimeout(m_timeout);
             mpPlayer->setInterruptOnTimeout(m_abort_timeout);
             mpPlayer->setRepeat(mLoopCount - 1);
+            mpPlayer->setAudioStream(m_audio_track);
+            mpPlayer->setSubtitleStream(m_sub_track);
             if (!vcodec_opt.isEmpty()) {
                 QVariantHash vcopt;
                 for (QVariantMap::const_iterator cit = vcodec_opt.cbegin(); cit != vcodec_opt.cend(); ++cit) {
@@ -662,7 +690,7 @@ void QmlAVPlayer::_q_started()
     // TODO: in load()?
     m_metaData->setValuesFromStatistics(mpPlayer->statistics());
     if (!mHasAudio) {
-        mHasAudio = mpPlayer->audioStreamCount() > 0;
+        mHasAudio = !mpPlayer->internalAudioTracks().isEmpty();
         if (mHasAudio)
             emit hasAudioChanged();
     }

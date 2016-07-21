@@ -24,11 +24,6 @@
 #include "QtAV/private/factory.h"
 #include "utils/Logger.h"
 
-// FF_API_PIX_FMT
-#ifdef PixelFormat
-#undef PixelFormat
-#endif
-
 namespace QtAV {
 
 FACTORY_DEFINE(VideoEncoder)
@@ -56,7 +51,7 @@ VideoEncoder::VideoEncoder(VideoEncoderPrivate &d):
 
 QString VideoEncoder::name() const
 {
-    return QString(VideoEncoderFactory::name(id()).c_str());
+    return QLatin1String(VideoEncoderFactory::name(id()).c_str());
 }
 
 void VideoEncoder::setWidth(int value)

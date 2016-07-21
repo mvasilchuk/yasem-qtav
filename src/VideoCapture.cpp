@@ -18,8 +18,6 @@
     License along with this library; if not, write to the Free Software
     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 ******************************************************************************/
-
-
 #include "QtAV/VideoCapture.h"
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
@@ -45,7 +43,7 @@ public:
         , save(true)
         , original_fmt(false)
         , quality(-1)
-        , format("PNG")
+        , format(QStringLiteral("PNG"))
         , qfmt(QImage::Format_ARGB32)
     {
         setAutoDelete(true);
@@ -73,7 +71,7 @@ public:
             }
         }
         name += QString::number(frame.timestamp(), 'f', 3);
-        QString path(dir + "/" + name + ".");
+        QString path(dir + QStringLiteral("/") + name + QStringLiteral("."));
         if (original_fmt) {
             path.append(frame.format().name());
             qDebug("Saving capture to %s", qPrintable(path));
@@ -127,8 +125,8 @@ VideoCapture::VideoCapture(QObject *parent) :
     dir = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
 #endif
     if (dir.isEmpty())
-        dir = qApp->applicationDirPath() + "/capture";
-    fmt = "PNG";
+        dir = qApp->applicationDirPath() + QStringLiteral("/capture");
+    fmt = QStringLiteral("PNG");
     qual = -1;
     // seems no direct connection is fine too
     connect(qApp, SIGNAL(aboutToQuit()), SLOT(handleAppQuit()), Qt::DirectConnection);
@@ -197,7 +195,7 @@ void VideoCapture::request()
 void VideoCapture::start()
 {
     emit frameAvailable(frame); //TODO: no copy
-    if (!frame.isValid() || !frame.bits(0)) { // if frame is always cloned, then size is at least width*height
+    if (!frame.isValid() || !frame.constBits(0)) { // if frame is always cloned, then size is at least width*height
         qDebug("Captured frame from hardware decoder surface.");
     }
     CaptureTask *task = new CaptureTask(this);
